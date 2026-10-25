@@ -82,11 +82,13 @@ export type Stats = {
   risk: number;
   reqMet: number;
   reqTotal: number;
+  actDone: number;
+  actTotal: number;
   net: number;
 };
 
 export function optionStats(children: Item[]): Stats {
-  const s: Stats = { pro: 0, con: 0, risk: 0, reqMet: 0, reqTotal: 0, net: 0 };
+  const s: Stats = { pro: 0, con: 0, risk: 0, reqMet: 0, reqTotal: 0, actDone: 0, actTotal: 0, net: 0 };
   for (const c of children) {
     if (c.kind === 'pro') s.pro += c.weight;
     else if (c.kind === 'con') s.con += c.weight;
@@ -94,6 +96,9 @@ export function optionStats(children: Item[]): Stats {
     else if (c.kind === 'requirement') {
       s.reqTotal++;
       if (c.met) s.reqMet++;
+    } else if (c.kind === 'action') {
+      s.actTotal++;
+      if (c.done) s.actDone++;
     }
   }
   s.net = s.pro - s.con - s.risk;

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, type CSSProperties } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { KINDS, isWeighted, type Item, type Stats } from './model';
 import { pillText } from './compact';
@@ -67,9 +67,24 @@ function Balance({ s }: { s: Stats }) {
         <span className="seg seg-risk" style={{ width: pct(s.risk) }} />
       </div>
       <div className="dn-stats">
-        <span className="t-pro">+{s.pro}</span>
-        <span className="t-con">−{s.con}</span>
-        <span className="t-risk">!{s.risk}</span>
+        <span className="stat t-pro" title="Pros (total impact)">
+          <KindIcon kind="pro" size={11} />
+          {s.pro}
+        </span>
+        <span className="stat t-con" title="Cons (total impact)">
+          <KindIcon kind="con" size={11} />
+          {s.con}
+        </span>
+        <span className="stat t-risk" title="Risks (total impact)">
+          <KindIcon kind="risk" size={11} />
+          {s.risk}
+        </span>
+        {s.actTotal > 0 && (
+          <span className={`stat t-action ${s.actDone === s.actTotal ? 'is-all' : ''}`} title="Actions done">
+            <KindIcon kind="action" size={11} />
+            {s.actDone}/{s.actTotal}
+          </span>
+        )}
         <span className="dn-spacer" />
         {s.reqTotal > 0 && (
           <span className={missing ? 't-warn' : 't-ok'}>
@@ -92,10 +107,17 @@ function InlineTitle({ item, selectAll }: { item: Item; selectAll: boolean }) {
     else el.setSelectionRange(el.value.length, el.value.length);
     // Only on mount: the caret should not jump while typing.
   }, []);
+  // Grow with the text; the card itself resizes as the title wraps.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = '0px';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [item.title]);
   return (
     <textarea
       ref={ref}
-      rows={2}
+      rows={1}
       className={cx('dn-title dn-edit nodrag nowheel nopan')}
       value={item.title}
       placeholder={KINDS[item.kind].placeholder}

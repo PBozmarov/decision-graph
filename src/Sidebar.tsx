@@ -30,14 +30,14 @@ export function Sidebar({
   onSelect,
   onNew,
   onDelete,
-  onExample,
+  onTemplate,
 }: {
   docs: Doc[];
   activeId: string;
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
-  onExample: () => void;
+  onTemplate: () => void;
 }) {
   const sorted = [...docs].sort((a, b) => b.updatedAt - a.updatedAt);
   return (
@@ -92,8 +92,8 @@ export function Sidebar({
       </div>
 
       <footer className="side-foot">
-        <button className="side-example" onClick={onExample}>
-          <IconSparkle size={13} /> Open an example
+        <button className="side-example" onClick={onTemplate}>
+          <IconSparkle size={13} /> Start from a template
         </button>
       </footer>
     </aside>

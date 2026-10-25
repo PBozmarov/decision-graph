@@ -30,8 +30,9 @@ import {
   type Size,
   type Stats,
 } from './model';
-import { compactOptionHeight } from './compact';
+import { cardSize } from './compact';
 import { useDoc } from './store';
+import { TEMPLATES, type Template } from './templates';
 import {
   IconCompact,
   IconCopy,
@@ -124,32 +125,63 @@ function ZoomPill({ padding }: { padding: () => Pad }) {
   );
 }
 
-function EmptyState({ onStart }: { onStart: (title: string) => void }) {
+function EmptyState({
+  onStart,
+  onTemplate,
+}: {
+  onStart: (title: string) => void;
+  onTemplate: (t: Template) => void;
+}) {
   const [v, setV] = useState('');
   return (
     <div className="empty">
-      <form
-        className="empty-card glass"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onStart(v.trim());
-        }}
-      >
+      <div className="empty-card glass">
         <span className="logo logo-lg">
           <KindIcon kind="option" size={26} />
         </span>
         <h1>What are you deciding?</h1>
         <p>Start with the question. Branch out into options, then weigh what each one needs, gives and risks.</p>
-        <input
-          autoFocus
-          value={v}
-          onChange={(e) => setV(e.target.value)}
-          placeholder="e.g. Should we migrate to Kubernetes?"
-        />
-        <button className="btn-primary" type="submit">
-          Start
-        </button>
-      </form>
+        <form
+          className="empty-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onStart(v.trim());
+          }}
+        >
+          <input
+            autoFocus
+            value={v}
+            onChange={(e) => setV(e.target.value)}
+            placeholder="e.g. Should we migrate to Kubernetes?"
+          />
+          <button className="btn-primary" type="submit">
+            Start
+          </button>
+        </form>
+
+        <div className="empty-or">
+          <span>or start from a template</span>
+        </div>
+        <div className="tpl-grid">
+          {TEMPLATES.map((t) => (
+            <button
+              key={t.id}
+              className="tpl"
+              style={{ '--k': `var(--${t.kind})` } as CSSProperties}
+              onClick={() => onTemplate(t)}
+            >
+              <span className="dn-chip tpl-chip">
+                <KindIcon kind={t.kind} size={15} />
+              </span>
+              <span className="tpl-title">{t.title}</span>
+              <span className="tpl-sub">{t.subtitle}</span>
+            </button>
+          ))}
+        </div>
+        <div className="empty-tip">
+          Tip: <kbd className="kbd-wide">Tab</kbd> adds inside, <kbd>↵</kbd> adds the next one
+        </div>
+      </div>
     </div>
   );
 }
@@ -234,13 +266,7 @@ function Canvas() {
 
   const sizes = useMemo(() => {
     const m = new Map<string, Size>();
-    for (const it of items)
-      m.set(
-        it.id,
-        compact && it.kind === 'option'
-          ? { w: SIZE.option.w, h: compactOptionHeight(pillsOf(it.id)) }
-          : SIZE[it.kind],
-      );
+    for (const it of items) m.set(it.id, cardSize(it, compact && it.kind === 'option' ? pillsOf(it.id) : null));
     return m;
   }, [items, compact, pillsOf]);
   const sizeOf = useCallback((it: Item) => sizes.get(it.id) ?? SIZE[it.kind], [sizes]);
@@ -773,6 +799,10 @@ function Canvas() {
   const selected = selectedId ? byId.get(selectedId) : undefined;
   const focused = focusId ? byId.get(focusId) : undefined;
   const sideOpen = sidebar === 'open';
+  // On phones the sidebar covers the canvas, so tuck it away after a choice.
+  const closeSideOnMobile = () => {
+    if (window.innerWidth <= 760) setSidebar('closed');
+  };
 
   return (
     <ActionsContext.Provider value={actions}>
@@ -829,12 +859,14 @@ function Canvas() {
             docs={doc.docs}
             activeId={doc.activeId}
             onSelect={(id) => {
+              closeSideOnMobile();
               if (id === doc.activeId) return;
               doc.switchDoc(id);
               resetView();
               fit();
             }}
             onNew={() => {
+              closeSideOnMobile();
               doc.newDoc();
               resetView();
             }}
@@ -846,10 +878,10 @@ function Canvas() {
                 fit();
               }
             }}
-            onExample={() => {
-              doc.openExample();
+            onTemplate={() => {
+              closeSideOnMobile();
+              doc.newDoc();
               resetView();
-              fit();
             }}
           />
         )}
@@ -1014,6 +1046,11 @@ function Canvas() {
 
         {items.length === 0 && (
           <EmptyState
+            onTemplate={(t) => {
+              doc.replaceItems(t.build());
+              resetView();
+              fit();
+            }}
             onStart={(title) => {
               const id = add(null, 'problem', title);
               setSelectedId(id);

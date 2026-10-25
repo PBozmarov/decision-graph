@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { applyMove, makeItem, sampleItems, type Item, type Kind } from './model';
+import { applyMove, makeItem, type Item, type Kind } from './model';
 
 const LIB_KEY = 'decision-graph:library:v1';
 const OLD_KEY = 'decision-graph:v1'; // single-graph storage from the first prototype
@@ -38,7 +38,8 @@ function loadLibrary(): Library {
   } catch {
     /* ignore */
   }
-  const doc = makeDoc(items ?? sampleItems());
+  // Brand-new visitors start with an empty decision and pick a template.
+  const doc = makeDoc(items ?? []);
   return { docs: [doc], activeId: doc.id };
 }
 
@@ -202,7 +203,8 @@ export function useDoc() {
     [commit],
   );
 
-  const openExample = useCallback(() => newDoc(sampleItems()), [newDoc]);
+  /** Fill the current decision (e.g. from a template); undoable. */
+  const replaceItems = useCallback((next: Item[]) => commit(() => next), [commit]);
 
   return {
     items: active.items,
@@ -211,7 +213,7 @@ export function useDoc() {
     switchDoc,
     newDoc,
     deleteDoc,
-    openExample,
+    replaceItems,
     add,
     update,
     remove,
