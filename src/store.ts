@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyMove, makeItem, type Item, type Kind } from './model';
+import { removeCloudDoc, saveCloudDoc, watchDocs } from './cloud';
 
 const LIB_KEY = 'decision-graph:library:v1';
 const OLD_KEY = 'decision-graph:v1'; // single-graph storage from the first prototype
 const HISTORY_LIMIT = 200;
 const MERGE_MS = 1000;
+const SAVE_DELAY_MS = 700; // cloud: save a decision this long after the last edit
+
+export type SyncStatus = 'local' | 'loading' | 'saving' | 'saved' | 'offline' | 'error';
 
 export type Doc = { id: string; items: Item[]; createdAt: number; updatedAt: number };
 type Library = { docs: Doc[]; activeId: string };
@@ -43,20 +47,210 @@ function loadLibrary(): Library {
   return { docs: [doc], activeId: doc.id };
 }
 
-type State = { lib: Library; past: Item[][]; future: Item[][] };
+type State = { lib: Library; past: Item[][]; future: Item[][]; ready: boolean };
 
-export function useDoc() {
-  const [s, setS] = useState<State>(() => ({ lib: loadLibrary(), past: [], future: [] }));
+/**
+ * The decision library. Signed out (`uid` null) it lives in this browser's localStorage.
+ * Signed in, it mirrors the account's decisions in Firestore: local edits are saved shortly
+ * after they happen, and changes from other devices stream in.
+ */
+export function useDoc(uid: string | null) {
+  const [s, setS] = useState<State>(() => ({ lib: loadLibrary(), past: [], future: [], ready: true }));
   // Consecutive edits to the same field of the same card merge into one undo step.
   const lastEdit = useRef<{ key: string; at: number } | null>(null);
 
+  // Guest mode: persist in this browser.
   useEffect(() => {
+    if (uid) return;
     try {
       localStorage.setItem(LIB_KEY, JSON.stringify(s.lib));
     } catch {
       /* ignore */
     }
-  }, [s.lib]);
+  }, [s.lib, uid]);
+
+  /* ---------- cloud sync ---------- */
+
+  // Last version of each decision known to match the cloud (by object identity).
+  const synced = useRef(new Map<string, Doc>());
+  const timers = useRef(new Map<string, number>());
+  const libRef = useRef(s.lib);
+  libRef.current = s.lib;
+  const [pending, setPending] = useState(0);
+  const [syncError, setSyncError] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+
+  const write = useCallback((user: string, d: Doc) => {
+    synced.current.set(d.id, d);
+    setPending((n) => n + 1);
+    return saveCloudDoc(user, d)
+      .then(() => setSyncError(false))
+      .catch((e) => {
+        console.error('Saving failed', e);
+        setSyncError(true);
+      })
+      .finally(() => setPending((n) => n - 1));
+  }, []);
+
+  /** Save everything that hasn't reached the cloud yet (e.g. right before signing out). */
+  const flush = useCallback(async () => {
+    if (!uid) return;
+    for (const t of timers.current.values()) clearTimeout(t);
+    timers.current.clear();
+    const dirty = libRef.current.docs.filter((d) => synced.current.get(d.id) !== d);
+    await Promise.all(dirty.map((d) => write(uid, d)));
+  }, [uid, write]);
+
+  // Switch data source whenever the account changes.
+  useEffect(() => {
+    lastEdit.current = null;
+    for (const t of timers.current.values()) clearTimeout(t);
+    timers.current.clear();
+    synced.current = new Map();
+    setSyncError(false);
+    if (!uid) {
+      setS({ lib: loadLibrary(), past: [], future: [], ready: true });
+      return;
+    }
+    const placeholder = makeDoc();
+    setS({ lib: { docs: [placeholder], activeId: placeholder.id }, past: [], future: [], ready: false });
+
+    const unsub = watchDocs(
+      uid,
+      (changes, first) => {
+        for (const c of changes) {
+          if (c.type === 'upsert') synced.current.set(c.doc.id, c.doc);
+          else synced.current.delete(c.id);
+        }
+        // First sign-in on this device: copy the decisions made here as a guest into the account.
+        let guest: Doc[] = [];
+        let savedActive: string | null = null;
+        if (first) {
+          const flag = `dg-merged-${uid}`;
+          try {
+            if (!localStorage.getItem(flag)) {
+              guest = loadLibrary().docs.filter((d) => d.items.length);
+              localStorage.setItem(flag, '1');
+            }
+            savedActive = localStorage.getItem(`dg-active-${uid}`);
+          } catch {
+            /* ignore */
+          }
+        }
+        const fresh = makeDoc();
+
+        setS((st) => {
+          let docs = first ? [] : st.lib.docs;
+          for (const c of changes) {
+            if (c.type === 'remove') {
+              docs = docs.filter((d) => d.id !== c.id);
+              continue;
+            }
+            const i = docs.findIndex((d) => d.id === c.doc.id);
+            if (i < 0) docs = [...docs, c.doc];
+            else if (c.doc.updatedAt > docs[i].updatedAt) docs = docs.map((d, j) => (j === i ? c.doc : d));
+          }
+          if (first) {
+            docs = [...guest.filter((g) => !docs.some((d) => d.id === g.id)), ...docs];
+          }
+          if (!docs.length) docs = [fresh];
+
+          let activeId = st.lib.activeId;
+          if (first) {
+            activeId =
+              savedActive && docs.some((d) => d.id === savedActive)
+                ? savedActive
+                : [...docs].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+          } else if (!docs.some((d) => d.id === activeId)) {
+            activeId = docs[0].id;
+          }
+          // Another device changed the open decision: its local undo history no longer applies.
+          const replacedActive =
+            !first && changes.some((c) => c.type === 'upsert' && c.doc.id === activeId && docs.includes(c.doc));
+          const keepHistory = !first && !replacedActive;
+          return {
+            lib: { docs, activeId },
+            past: keepHistory ? st.past : [],
+            future: keepHistory ? st.future : [],
+            ready: true,
+          };
+        });
+      },
+      (e) => {
+        console.error('Sync failed', e);
+        setSyncError(true);
+        setS((st) => ({ ...st, ready: true }));
+      },
+    );
+    return unsub;
+  }, [uid]);
+
+  // Push local changes: each changed decision is saved a moment after its last edit.
+  useEffect(() => {
+    if (!uid || !s.ready) return;
+    for (const d of s.lib.docs) {
+      if (synced.current.get(d.id) === d) continue;
+      const t = timers.current.get(d.id);
+      if (t) clearTimeout(t);
+      timers.current.set(
+        d.id,
+        window.setTimeout(() => {
+          timers.current.delete(d.id);
+          const latest = libRef.current.docs.find((x) => x.id === d.id);
+          if (latest && synced.current.get(d.id) !== latest) write(uid, latest);
+        }, SAVE_DELAY_MS),
+      );
+    }
+    for (const id of [...synced.current.keys()]) {
+      if (s.lib.docs.some((d) => d.id === id)) continue;
+      synced.current.delete(id);
+      setPending((n) => n + 1);
+      removeCloudDoc(uid, id)
+        .catch(() => setSyncError(true))
+        .finally(() => setPending((n) => n - 1));
+    }
+  }, [s.lib, s.ready, uid, write]);
+
+  // Remember the open decision per account.
+  useEffect(() => {
+    if (!uid || !s.ready) return;
+    try {
+      localStorage.setItem(`dg-active-${uid}`, s.lib.activeId);
+    } catch {
+      /* ignore */
+    }
+  }, [uid, s.ready, s.lib.activeId]);
+
+  // Best effort: don't lose the last edit when the tab closes.
+  useEffect(() => {
+    const onHide = () => void flush();
+    window.addEventListener('pagehide', onHide);
+    return () => window.removeEventListener('pagehide', onHide);
+  }, [flush]);
+
+  const dirty = !!uid && s.ready && s.lib.docs.some((d) => synced.current.get(d.id) !== d);
+  const syncStatus: SyncStatus = !uid
+    ? 'local'
+    : !s.ready
+      ? 'loading'
+      : syncError
+        ? 'error'
+        : !online
+          ? 'offline'
+          : pending > 0 || dirty
+            ? 'saving'
+            : 'saved';
 
   const active = useMemo(
     () => s.lib.docs.find((d) => d.id === s.lib.activeId) ?? s.lib.docs[0],
@@ -79,6 +273,7 @@ export function useDoc() {
       const next = fn(prev);
       if (next === prev) return st;
       return {
+        ...st,
         lib: withItems(st.lib, next),
         past: merge ? st.past : [...st.past, prev].slice(-HISTORY_LIMIT),
         future: [],
@@ -92,6 +287,7 @@ export function useDoc() {
       if (!st.past.length) return st;
       const prev = currentItems(st.lib);
       return {
+        ...st,
         lib: withItems(st.lib, st.past[st.past.length - 1]),
         past: st.past.slice(0, -1),
         future: [prev, ...st.future],
@@ -104,7 +300,7 @@ export function useDoc() {
     setS((st) => {
       if (!st.future.length) return st;
       const prev = currentItems(st.lib);
-      return { lib: withItems(st.lib, st.future[0]), past: [...st.past, prev], future: st.future.slice(1) };
+      return { ...st, lib: withItems(st.lib, st.future[0]), past: [...st.past, prev], future: st.future.slice(1) };
     });
   }, []);
 
@@ -112,13 +308,13 @@ export function useDoc() {
 
   const switchDoc = useCallback((id: string) => {
     lastEdit.current = null;
-    setS((st) => (st.lib.activeId === id ? st : { lib: { ...st.lib, activeId: id }, past: [], future: [] }));
+    setS((st) => (st.lib.activeId === id ? st : { ...st, lib: { ...st.lib, activeId: id }, past: [], future: [] }));
   }, []);
 
   const newDoc = useCallback((items: Item[] = []) => {
     lastEdit.current = null;
     const doc = makeDoc(items);
-    setS((st) => ({ lib: { docs: [doc, ...st.lib.docs], activeId: doc.id }, past: [], future: [] }));
+    setS((st) => ({ ...st, lib: { docs: [doc, ...st.lib.docs], activeId: doc.id }, past: [], future: [] }));
     return doc.id;
   }, []);
 
@@ -129,7 +325,7 @@ export function useDoc() {
       if (!docs.length) docs = [makeDoc()];
       const activeId = st.lib.activeId === id ? docs[0].id : st.lib.activeId;
       const changed = activeId !== st.lib.activeId;
-      return { lib: { docs, activeId }, past: changed ? [] : st.past, future: changed ? [] : st.future };
+      return { ...st, lib: { docs, activeId }, past: changed ? [] : st.past, future: changed ? [] : st.future };
     });
   }, []);
 
@@ -208,6 +404,9 @@ export function useDoc() {
 
   return {
     items: active.items,
+    ready: s.ready,
+    syncStatus,
+    flush,
     canUndo: s.past.length > 0,
     canRedo: s.future.length > 0,
     docs: s.lib.docs,

@@ -32,6 +32,7 @@ import {
 } from './model';
 import { cardSize } from './compact';
 import { useDoc } from './store';
+import { cloudEnabled, signInWithGoogle, signOutUser, useAuth } from './cloud';
 import { TEMPLATES, type Template } from './templates';
 import {
   IconCompact,
@@ -193,7 +194,8 @@ const Kbd = ({ children }: { children: string }) => (
 );
 
 function Canvas() {
-  const doc = useDoc();
+  const auth = useAuth();
+  const doc = useDoc(auth.account?.uid ?? null);
   const { items, add, update, remove, move, choose, undo, redo } = doc;
   const { theme, toggle } = useTheme();
   const [view, setView] = usePref<'compact' | 'expanded'>('dg-view', 'compact');
@@ -888,6 +890,26 @@ function Canvas() {
               doc.newDoc();
               resetView();
             }}
+            account={cloudEnabled ? auth.account : undefined}
+            syncStatus={doc.syncStatus}
+            onSignIn={async () => {
+              try {
+                await signInWithGoogle();
+                resetView();
+                fit();
+              } catch (e) {
+                const code = (e as { code?: string }).code ?? '';
+                if (!code.includes('popup-closed') && !code.includes('cancelled-popup')) {
+                  setToast(code.includes('popup-blocked') ? 'Allow pop-ups to sign in' : 'Sign-in failed, please try again');
+                }
+              }
+            }}
+            onSignOut={async () => {
+              await doc.flush();
+              await signOutUser();
+              resetView();
+              fit();
+            }}
           />
         )}
 
@@ -1070,7 +1092,16 @@ function Canvas() {
           </div>
         )}
 
-        {items.length === 0 && (
+        {(auth.loading || !doc.ready) && (
+          <div className="loading">
+            <div className="loading-card glass">
+              <span className="spinner" />
+              {auth.loading ? 'Loading…' : 'Loading your decisions…'}
+            </div>
+          </div>
+        )}
+
+        {!auth.loading && doc.ready && items.length === 0 && (
           <EmptyState
             onTemplate={(t) => {
               doc.replaceItems(t.build());
