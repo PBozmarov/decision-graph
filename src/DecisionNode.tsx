@@ -1,6 +1,7 @@
-import { memo, useEffect, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useRef, type CSSProperties } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { KINDS, SIZE, isWeighted, type Item, type Stats } from './model';
+import { KINDS, isWeighted, type Item, type Stats } from './model';
+import { pillText } from './compact';
 import { useActions } from './actions';
 import { IconCheck, IconChevron, IconPlus, KindIcon } from './icons';
 
@@ -11,6 +12,16 @@ export type DNodeData = {
   optionCount: number;
   leading: boolean;
   dimmed: boolean;
+  faded: boolean;
+  w: number;
+  h: number;
+  /** Compact view: children drawn as pills inside this card. */
+  pills: Item[] | null;
+  selectedPill: string | null;
+  editing: boolean;
+  selectAll: boolean;
+  menuOpen: boolean;
+  menuIndex: number;
 };
 export type DNode = Node<DNodeData, 'decision'>;
 
@@ -68,17 +79,67 @@ function Balance({ s }: { s: Stats }) {
   );
 }
 
-function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
-  const { item, stats, childCount, optionCount, leading, dimmed } = data;
-  const { add, update, select } = useActions();
-  const [menu, setMenu] = useState(false);
-  const meta = KINDS[item.kind];
-  const { w, h } = SIZE[item.kind];
-  const canAdd = meta.children.length > 0;
-
+function InlineTitle({ item, selectAll }: { item: Item; selectAll: boolean }) {
+  const { update, editKey, stopEdit } = useActions();
+  const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (!selected) setMenu(false);
-  }, [selected]);
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    if (selectAll) el.select();
+    else el.setSelectionRange(el.value.length, el.value.length);
+    // Only on mount: the caret should not jump while typing.
+  }, []);
+  return (
+    <textarea
+      ref={ref}
+      rows={2}
+      className={cx('dn-title dn-edit nodrag nowheel nopan')}
+      value={item.title}
+      placeholder={KINDS[item.kind].placeholder}
+      onChange={(e) => update(item.id, { title: e.target.value.replace(/\n/g, ' ') })}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape' || e.key === 'Tab') {
+          e.preventDefault();
+          e.stopPropagation();
+          editKey(item.id, e.key as 'Enter' | 'Escape' | 'Tab');
+        }
+      }}
+      onBlur={stopEdit}
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
+
+function Pill({ p, selected }: { p: Item; selected: boolean }) {
+  const { select, startEdit } = useActions();
+  const ticked = (p.kind === 'requirement' && p.met) || (p.kind === 'action' && p.done);
+  return (
+    <button
+      className={cx('pill-item nodrag', selected && 'is-sel', ticked && 'is-ticked', p.kind === 'action' && p.done && 'is-done')}
+      style={{ '--k': `var(--${p.kind})` } as CSSProperties}
+      title={pillText(p)}
+      onClick={(e) => {
+        e.stopPropagation();
+        select(p.id);
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        startEdit(p.id);
+      }}
+    >
+      <span className="pill-ic">{ticked ? <IconCheck size={10} /> : <KindIcon kind={p.kind} size={11} />}</span>
+      <span className={cx('pill-tx', !p.title && 'ph')}>{pillText(p)}</span>
+    </button>
+  );
+}
+
+function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
+  const { item, stats, childCount, optionCount, leading, dimmed, faded, w, h, pills, selectedPill } = data;
+  const { add, update, toggleMenu } = useActions();
+  const meta = KINDS[item.kind];
+  const canAdd = meta.children.length > 0;
+  const menu = data.menuOpen;
 
   const style = { width: w, height: h, '--k': `var(--${item.kind})` } as CSSProperties;
 
@@ -89,6 +150,8 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
         `dn-${item.kind}`,
         selected && 'is-selected',
         dimmed && 'is-dimmed',
+        faded && 'is-faded',
+        data.editing && 'is-editing',
         item.collapsed && childCount > 0 && 'is-collapsed',
         item.chosen && 'is-chosen',
       )}
@@ -151,11 +214,22 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
         )}
       </div>
 
-      <div className={cx('dn-title', item.kind === 'action' && item.done && 'is-done')}>
-        {item.title || <span className="ph">{meta.placeholder}</span>}
-      </div>
+      {data.editing ? (
+        <InlineTitle item={item} selectAll={data.selectAll} />
+      ) : (
+        <div className={cx('dn-title', item.kind === 'action' && item.done && 'is-done')}>
+          {item.title || <span className="ph">{meta.placeholder}</span>}
+        </div>
+      )}
 
       {item.kind === 'option' && stats && <Balance s={stats} />}
+      {pills && pills.length > 0 && (
+        <div className="pills">
+          {pills.map((p) => (
+            <Pill key={p.id} p={p} selected={p.id === selectedPill} />
+          ))}
+        </div>
+      )}
       {item.kind === 'problem' && (
         <div className="dn-foot">
           {optionCount === 0
@@ -172,8 +246,7 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
           aria-label="Add branch"
           onClick={(e) => {
             e.stopPropagation();
-            if (!selected) select(item.id);
-            setMenu((m) => !m);
+            toggleMenu(item.id);
           }}
         >
           <IconPlus size={14} />
@@ -182,20 +255,18 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
 
       {menu && (
         <div className="menu glass nodrag nowheel" onClick={(e) => e.stopPropagation()}>
-          {meta.children.map((k) => (
+          {meta.children.map((k, i) => (
             <button
               key={k}
-              className="menu-item"
+              className={cx('menu-item', i === data.menuIndex && 'is-hi')}
               style={{ '--k': `var(--${k})` } as CSSProperties}
-              onClick={() => {
-                setMenu(false);
-                add(item.id, k);
-              }}
+              onClick={() => add(item.id, k)}
             >
               <span className="dn-chip">
                 <KindIcon kind={k} size={13} />
               </span>
               {KINDS[k].addLabel}
+              <kbd className="menu-kbd">{i + 1}</kbd>
             </button>
           ))}
         </div>

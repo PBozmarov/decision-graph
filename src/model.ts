@@ -44,6 +44,9 @@ export const KINDS: Record<
 
 export const isWeighted = (k: Kind) => k === 'pro' || k === 'con' || k === 'risk';
 
+/** In compact view these children of an option show as pills inside the option card. */
+export const PILL_KINDS = new Set<Kind>(['requirement', 'pro', 'con', 'risk', 'action']);
+
 export const SIZE: Record<Kind, { w: number; h: number }> = {
   problem: { w: 300, h: 132 },
   option: { w: 272, h: 140 },
@@ -124,9 +127,20 @@ export function groupChildren(items: Item[]) {
   return map;
 }
 
-export function layout(items: Item[]) {
+export type Size = { w: number; h: number };
+export type LayoutOptions = {
+  /** Card size per item (defaults to the fixed SIZE table). */
+  size?: (it: Item) => Size;
+  /** Items drawn inside their parent card instead of as their own card. */
+  hidden?: Set<string>;
+};
+
+export function layout(items: Item[], opts: LayoutOptions = {}) {
+  const sizeOf = opts.size ?? ((it: Item) => SIZE[it.kind]);
+  const hidden = opts.hidden;
   const kids = groupChildren(items);
-  const visKids = (it: Item) => (it.collapsed ? [] : kids.get(it.id) ?? []);
+  const visKids = (it: Item) =>
+    it.collapsed ? [] : (kids.get(it.id) ?? []).filter((k) => !hidden?.has(k.id));
   const subH = new Map<string, number>();
   const pos = new Map<string, { x: number; y: number }>();
 
@@ -139,13 +153,13 @@ export function layout(items: Item[]) {
   const measure = (it: Item): number => {
     const ks = visKids(it);
     ks.forEach(measure);
-    const h = Math.max(SIZE[it.kind].h, blockHeight(ks));
+    const h = Math.max(sizeOf(it).h, blockHeight(ks));
     subH.set(it.id, h);
     return h;
   };
 
   const place = (it: Item, x: number, top: number) => {
-    const { w, h } = SIZE[it.kind];
+    const { w, h } = sizeOf(it);
     const sh = subH.get(it.id)!;
     pos.set(it.id, { x, y: top + sh / 2 - h / 2 });
     const ks = visKids(it);

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { KINDS, isWeighted, type Item, type Stats } from './model';
 import { Dots } from './DecisionNode';
-import { IconCheck, IconClose, IconTrash, KindIcon } from './icons';
+import { IconCheck, IconClose, IconFocus, IconTrash, KindIcon } from './icons';
 
 const IMPACT = ['', 'Minor', 'Low', 'Moderate', 'High', 'Critical'];
 
@@ -10,13 +10,13 @@ function AutoText({
   onChange,
   placeholder,
   className,
-  autoFocus,
+  focusToken = 0,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   className: string;
-  autoFocus?: boolean;
+  focusToken?: number;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -26,8 +26,9 @@ function AutoText({
     el.style.height = `${el.scrollHeight}px`;
   }, [value]);
   useEffect(() => {
-    if (autoFocus) ref.current?.focus();
-  }, [autoFocus]);
+    // Renaming: select the existing text so typing replaces it.
+    if (focusToken) ref.current?.select();
+  }, [focusToken]);
   return (
     <textarea
       ref={ref}
@@ -43,21 +44,27 @@ function AutoText({
 export function Inspector({
   item,
   stats,
-  fresh,
+  focusToken,
   onUpdate,
   onAdd,
   onChoose,
   onDelete,
   onClose,
+  onFocus,
+  focused,
 }: {
   item: Item;
   stats: Stats | null;
-  fresh: boolean;
+  /** Changes whenever the title should take focus. */
+  focusToken: number;
   onUpdate: (patch: Partial<Item>) => void;
   onAdd: (kind: Item['kind']) => void;
   onChoose: () => void;
   onDelete: () => void;
   onClose: () => void;
+  /** Present when this card has a branch that can be focused. */
+  onFocus?: () => void;
+  focused?: boolean;
 }) {
   const meta = KINDS[item.kind];
   const style = { '--k': `var(--${item.kind})` } as CSSProperties;
@@ -70,6 +77,16 @@ export function Inspector({
         </span>
         <span className="dn-kind">{meta.label}</span>
         <span className="dn-spacer" />
+        {onFocus && (
+          <button
+            className={`icon-btn ${focused ? 'is-on' : ''}`}
+            onClick={onFocus}
+            aria-label={focused ? 'Exit focus' : 'Focus this branch'}
+            title={focused ? 'Exit focus (F)' : 'Focus this branch (F)'}
+          >
+            <IconFocus size={14} />
+          </button>
+        )}
         <button className="icon-btn" onClick={onClose} aria-label="Close">
           <IconClose size={14} />
         </button>
@@ -80,7 +97,7 @@ export function Inspector({
         value={item.title}
         placeholder={meta.placeholder}
         onChange={(v) => onUpdate({ title: v })}
-        autoFocus={fresh}
+        focusToken={focusToken}
       />
 
       {item.kind !== 'note' && (

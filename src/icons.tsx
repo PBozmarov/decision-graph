@@ -134,3 +134,34 @@ export const IconBlank = ({ size }: { size?: number }) => (
     <path d="M12 9v6M9 12h6" />
   </Svg>
 );
+export const IconSidebar = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <rect x="3" y="4.5" width="18" height="15" rx="3" />
+    <path d="M9.5 4.5v15" />
+  </Svg>
+);
+export const IconFocus = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M3.5 8V5.5a2 2 0 0 1 2-2H8M16 3.5h2.5a2 2 0 0 1 2 2V8M20.5 16v2.5a2 2 0 0 1-2 2H16M8 20.5H5.5a2 2 0 0 1-2-2V16" />
+  </Svg>
+);
+export const IconCompact = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <rect x="3.5" y="5" width="17" height="14" rx="3" />
+    <path d="M7.5 14.5h3M12.5 14.5h4M7.5 10h9" />
+  </Svg>
+);
+export const IconExpand = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <rect x="2.5" y="9" width="7" height="6" rx="1.5" />
+    <rect x="14.5" y="3.5" width="7" height="5" rx="1.5" />
+    <rect x="14.5" y="15.5" width="7" height="5" rx="1.5" />
+    <path d="M9.5 12h2.5M12 6v12M12 6h2.5M12 18h2.5" />
+  </Svg>
+);
+export const IconSparkle = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5 10.2 15A2 2 0 0 0 9 13.8L3.5 12 9 10.2A2 2 0 0 0 10.2 9Z" />
+  </Svg>
+);
