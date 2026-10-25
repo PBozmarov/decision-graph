@@ -10,6 +10,8 @@ export type DNodeData = {
   stats: Stats | null;
   childCount: number;
   optionCount: number;
+  /** Decision cards: title of the chosen option, if any. */
+  chosenTitle: string | null;
   leading: boolean;
   dimmed: boolean;
   faded: boolean;
@@ -232,9 +234,15 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
       )}
       {item.kind === 'problem' && (
         <div className="dn-foot">
-          {optionCount === 0
-            ? 'No options yet'
-            : `${optionCount} option${optionCount === 1 ? '' : 's'}`}
+          {data.chosenTitle !== null ? (
+            <span className="dn-decided">
+              <IconCheck size={11} /> {data.chosenTitle || 'Untitled option'}
+            </span>
+          ) : optionCount === 0 ? (
+            'No options yet'
+          ) : (
+            `${optionCount} option${optionCount === 1 ? '' : 's'}`
+          )}
         </div>
       )}
 

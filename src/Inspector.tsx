@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { KINDS, isWeighted, type Item, type Stats } from './model';
 import { Dots } from './DecisionNode';
-import { IconCheck, IconClose, IconFocus, IconTrash, KindIcon } from './icons';
+import { IconCheck, IconClose, IconColumns, IconFocus, IconTrash, KindIcon } from './icons';
 
 const IMPACT = ['', 'Minor', 'Low', 'Moderate', 'High', 'Critical'];
 
@@ -52,6 +52,8 @@ export function Inspector({
   onClose,
   onFocus,
   focused,
+  record,
+  onCompare,
 }: {
   item: Item;
   stats: Stats | null;
@@ -65,6 +67,10 @@ export function Inspector({
   /** Present when this card has a branch that can be focused. */
   onFocus?: () => void;
   focused?: boolean;
+  /** Decision record: the decision this card belongs to and its chosen option. */
+  record?: { problem: Item; chosen: Item | null; onRationale: (v: string) => void };
+  /** Present on decisions with 2+ options. */
+  onCompare?: () => void;
 }) {
   const meta = KINDS[item.kind];
   const style = { '--k': `var(--${item.kind})` } as CSSProperties;
@@ -190,6 +196,55 @@ export function Inspector({
               'Choose this path'
             )}
           </button>
+        </section>
+      )}
+
+      {item.kind === 'problem' && record && (
+        <section className="insp-section">
+          <div className="insp-label">Decision</div>
+          {record.chosen ? (
+            <div className="record-chosen">
+              <span className="record-check">
+                <IconCheck size={13} />
+              </span>
+              <div>
+                <div className="record-title">{record.chosen.title || 'Untitled option'}</div>
+                {item.decidedAt && (
+                  <div className="insp-row-sub">
+                    Decided {new Date(item.decidedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="insp-row-sub">No path chosen yet. Pick one from an option, or compare them side by side.</div>
+          )}
+          {record.chosen && (
+            <AutoText
+              className="insp-notes"
+              value={item.rationale ?? ''}
+              placeholder="Why this path? Your future self will thank you…"
+              onChange={record.onRationale}
+            />
+          )}
+          {onCompare && (
+            <button className="btn-secondary" onClick={onCompare}>
+              <IconColumns size={15} /> Compare options
+              <span className="kbd-hint">C</span>
+            </button>
+          )}
+        </section>
+      )}
+
+      {item.kind === 'option' && item.chosen && record && (
+        <section className="insp-section">
+          <div className="insp-label">Why this path?</div>
+          <AutoText
+            className="insp-notes"
+            value={record.problem.rationale ?? ''}
+            placeholder="Write down the reasoning while it's fresh…"
+            onChange={record.onRationale}
+          />
         </section>
       )}
 

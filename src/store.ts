@@ -149,7 +149,7 @@ export function useDoc() {
 
   const update = useCallback(
     (id: string, patch: Partial<Item>) => {
-      const textOnly = Object.keys(patch).every((k) => k === 'title' || k === 'notes');
+      const textOnly = Object.keys(patch).every((k) => k === 'title' || k === 'notes' || k === 'rationale');
       commit(
         (prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)),
         textOnly ? `${id}:${Object.keys(patch).join(',')}` : undefined,
@@ -193,7 +193,9 @@ export function useDoc() {
             ? { ...p, chosen: next }
             : p.parentId === target.parentId && p.kind === 'option'
               ? { ...p, chosen: false }
-              : p,
+              : p.id === target.parentId
+                ? { ...p, decidedAt: next ? Date.now() : undefined }
+                : p,
         );
       });
     },

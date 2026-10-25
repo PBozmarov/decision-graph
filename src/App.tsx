@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -14,6 +14,8 @@ import '@xyflow/react/dist/style.css';
 import { DecisionNode, type DNode } from './DecisionNode';
 import { Inspector } from './Inspector';
 import { Sidebar } from './Sidebar';
+import { Compare } from './Compare';
+import { docTitle, downloadBlob, graphToPng, slug, toMarkdown } from './export';
 import { ActionsContext, type Actions } from './actions';
 import {
   KINDS,
@@ -32,7 +34,11 @@ import { compactOptionHeight } from './compact';
 import { useDoc } from './store';
 import {
   IconCompact,
+  IconCopy,
+  IconDoc,
   IconExpand,
+  IconImage,
+  IconShare,
   IconFit,
   IconFocus,
   IconMinus,
@@ -175,6 +181,14 @@ function Canvas() {
   const [editing, setEditing] = useState<{ id: string; selectAll: boolean } | null>(null);
   const [menu, setMenu] = useState<{ id: string; index: number } | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [compareId, setCompareId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const select = useCallback((id: string | null) => {
     setSelectedId(id);
@@ -323,6 +337,10 @@ function Canvas() {
           stats: stats.get(it.id) ?? null,
           childCount: children.length,
           optionCount: children.filter((c) => c.kind === 'option').length,
+          chosenTitle:
+            it.kind === 'problem'
+              ? ((kids.get(it.id) ?? []).find((c) => c.kind === 'option' && c.chosen)?.title ?? null)
+              : null,
           leading: leading.has(it.id),
           dimmed,
           faded,
@@ -546,6 +564,7 @@ function Canvas() {
     setEditing(null);
     setMenu(null);
     setFocusId(null);
+    setCompareId(null);
   }, []);
 
   /* ---------- keyboard ---------- */
@@ -577,6 +596,48 @@ function Canvas() {
         : all.filter((c) => hidden.has(c.id) && PILL_KINDS.has(c.kind));
     },
     [kids, nodeIds, hidden],
+  );
+
+  const optionsOf = useCallback(
+    (problemId: string) => (allKids.get(problemId) ?? []).filter((c) => c.kind === 'option'),
+    [allKids],
+  );
+
+  /* ---------- export ---------- */
+
+  const exportPng = useCallback(async () => {
+    setExportOpen(false);
+    select(null);
+    setEditing(null);
+    setMenu(null);
+    // Let the selection ring and "+" button finish fading out before capturing.
+    await new Promise((r) => setTimeout(r, 350));
+    try {
+      const url = await graphToPng(rf.getNodesBounds(rf.getNodes()));
+      downloadBlob(url, `${slug(docTitle(items))}.png`);
+      setToast('Image downloaded');
+    } catch {
+      setToast('Could not export the image');
+    }
+  }, [rf, items, select]);
+
+  const exportMd = useCallback(
+    async (mode: 'copy' | 'file') => {
+      setExportOpen(false);
+      const md = toMarkdown(items);
+      if (mode === 'file') {
+        downloadBlob(new Blob([md], { type: 'text/markdown' }), `${slug(docTitle(items))}.md`);
+        setToast('Markdown downloaded');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(md);
+        setToast('Copied as Markdown');
+      } catch {
+        setToast('Copy failed: your browser blocked clipboard access');
+      }
+    },
+    [items],
   );
 
   const pickMenu = useCallback(
@@ -612,7 +673,7 @@ function Canvas() {
         if (e.key === 'Escape') t.blur();
         return;
       }
-      if (mod || e.altKey) return;
+      if (mod || e.altKey || compareId) return;
 
       // Add menu open: arrows / Enter / number keys pick a type.
       if (menu) {
@@ -668,6 +729,12 @@ function Canvas() {
           e.preventDefault();
           startEdit(sel.id);
           return;
+        case 'c':
+        case 'C': {
+          const p = sel.kind === 'problem' ? sel : sel.kind === 'option' ? byId.get(sel.parentId ?? '') : undefined;
+          if (p && optionsOf(p.id).length >= 2) setCompareId(p.id);
+          return;
+        }
         case 'f':
         case 'F':
           if (nodeIds.has(sel.id) && navChildren(sel.id).length) toggleFocus(sel.id);
@@ -700,7 +767,7 @@ function Canvas() {
     return () => window.removeEventListener('keydown', onKey);
   }, [
     selectedId, byId, kids, nodeIds, menu, focusId, select, undo, redo, deleteItem,
-    handleAdd, startEdit, toggleFocus, navChildren, navSiblings, pickMenu,
+    handleAdd, startEdit, toggleFocus, navChildren, navSiblings, pickMenu, compareId, optionsOf,
   ]);
 
   const selected = selectedId ? byId.get(selectedId) : undefined;
@@ -819,6 +886,37 @@ function Canvas() {
             </button>
           </div>
           <span className="pill-sep" />
+          <div className="export-wrap">
+            <button
+              className={`icon-btn ${exportOpen ? 'is-on' : ''}`}
+              onClick={() => setExportOpen((o) => !o)}
+              aria-label="Export"
+              aria-expanded={exportOpen}
+              title="Export"
+              disabled={!items.length}
+            >
+              <IconShare size={15} />
+            </button>
+            {exportOpen && (
+              <>
+                <div className="export-scrim" onClick={() => setExportOpen(false)} />
+                <div className="menu glass export-menu" role="menu">
+                  <button className="menu-item" role="menuitem" style={{ '--k': 'var(--option)' } as CSSProperties} onClick={exportPng}>
+                    <span className="dn-chip"><IconImage size={13} /></span>
+                    Image (PNG)
+                  </button>
+                  <button className="menu-item" role="menuitem" style={{ '--k': 'var(--problem)' } as CSSProperties} onClick={() => exportMd('file')}>
+                    <span className="dn-chip"><IconDoc size={13} /></span>
+                    Markdown file
+                  </button>
+                  <button className="menu-item" role="menuitem" style={{ '--k': 'var(--note)' } as CSSProperties} onClick={() => exportMd('copy')}>
+                    <span className="dn-chip"><IconCopy size={13} /></span>
+                    Copy as Markdown
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button className="icon-btn" onClick={toggle} aria-label="Toggle theme" title="Toggle theme">
             {theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
           </button>
@@ -877,7 +975,41 @@ function Canvas() {
                 : undefined
             }
             focused={focusId === selected.id}
+            record={(() => {
+              const problem =
+                selected.kind === 'problem'
+                  ? selected
+                  : selected.kind === 'option'
+                    ? byId.get(selected.parentId ?? '')
+                    : undefined;
+              if (!problem) return undefined;
+              return {
+                problem,
+                chosen: optionsOf(problem.id).find((o) => o.chosen) ?? null,
+                onRationale: (v: string) => update(problem.id, { rationale: v }),
+              };
+            })()}
+            onCompare={
+              selected.kind === 'problem' && optionsOf(selected.id).length >= 2
+                ? () => setCompareId(selected.id)
+                : undefined
+            }
           />
+        )}
+
+        {compareId && byId.get(compareId) && (
+          <Compare
+            problem={byId.get(compareId)!}
+            items={items}
+            onChoose={(id) => choose(id)}
+            onClose={() => setCompareId(null)}
+          />
+        )}
+
+        {toast && (
+          <div className="toast glass" role="status">
+            {toast}
+          </div>
         )}
 
         {items.length === 0 && (

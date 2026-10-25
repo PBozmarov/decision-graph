@@ -10,6 +10,8 @@ export type Item = {
   met: boolean; // used by requirement
   done?: boolean; // used by action
   chosen: boolean; // used by option
+  rationale?: string; // used by problem: why the chosen path won
+  decidedAt?: number; // used by problem: when a path was chosen
   collapsed: boolean;
 };
 
