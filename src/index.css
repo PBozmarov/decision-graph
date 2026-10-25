@@ -1883,3 +1883,26 @@ button.brand.is-on .brand-side {
     margin: 0;
   }
 }
+
+/* inspector rows must never shrink (short bottom sheet on phones squashed the title) */
+.inspector > * {
+  flex-shrink: 0;
+}
+.reorder-btns {
+  display: flex;
+  gap: 4px;
+}
+.reorder-btns .icon-btn {
+  width: 40px;
+  height: 36px;
+  background: var(--fill);
+  color: var(--text);
+}
+@media (max-width: 760px) {
+  .top-right .icon-btn {
+    width: 30px;
+  }
+  .top-right .pill-sep {
+    margin: 0 2px;
+  }
+}

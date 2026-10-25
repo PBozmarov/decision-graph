@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { KINDS, isWeighted, type Item, type Stats } from './model';
 import { Dots } from './DecisionNode';
-import { IconCheck, IconClose, IconColumns, IconFocus, IconTrash, KindIcon } from './icons';
+import { IconArrowDown, IconArrowUp, IconCheck, IconClose, IconColumns, IconFocus, IconTrash, KindIcon } from './icons';
 
 const IMPACT = ['', 'Minor', 'Low', 'Moderate', 'High', 'Critical'];
 
@@ -54,6 +54,7 @@ export function Inspector({
   focused,
   record,
   onCompare,
+  reorder,
 }: {
   item: Item;
   stats: Stats | null;
@@ -71,6 +72,8 @@ export function Inspector({
   record?: { problem: Item; chosen: Item | null; onRationale: (v: string) => void };
   /** Present on decisions with 2+ options. */
   onCompare?: () => void;
+  /** Touch screens: move among same-type siblings (replaces drag to reorder). */
+  reorder?: { canUp: boolean; canDown: boolean; move: (dir: -1 | 1) => void };
 }) {
   const meta = KINDS[item.kind];
   const style = { '--k': `var(--${item.kind})` } as CSSProperties;
@@ -263,6 +266,20 @@ export function Inspector({
                 {KINDS[k].addLabel}
               </button>
             ))}
+          </div>
+        </section>
+      )}
+
+      {reorder && (reorder.canUp || reorder.canDown) && (
+        <section className="insp-section row">
+          <div className="insp-row-title">Order</div>
+          <div className="reorder-btns">
+            <button className="icon-btn" disabled={!reorder.canUp} onClick={() => reorder.move(-1)} aria-label="Move up">
+              <IconArrowUp size={16} />
+            </button>
+            <button className="icon-btn" disabled={!reorder.canDown} onClick={() => reorder.move(1)} aria-label="Move down">
+              <IconArrowDown size={16} />
+            </button>
           </div>
         </section>
       )}

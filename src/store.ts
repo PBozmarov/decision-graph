@@ -208,6 +208,8 @@ export function useDoc() {
 
   return {
     items: active.items,
+    canUndo: s.past.length > 0,
+    canRedo: s.future.length > 0,
     docs: s.lib.docs,
     activeId: active.id,
     switchDoc,

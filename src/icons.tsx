@@ -196,3 +196,25 @@ export const IconCopy = ({ size }: { size?: number }) => (
     <path d="M15.5 8.5V6a2.5 2.5 0 0 0-2.5-2.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5" />
   </Svg>
 );
+export const IconUndo = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Svg>
+);
+export const IconRedo = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+  </Svg>
+);
+export const IconArrowUp = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Svg>
+);
+export const IconArrowDown = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </Svg>
+);

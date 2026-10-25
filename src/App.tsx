@@ -45,7 +45,9 @@ import {
   IconMinus,
   IconMoon,
   IconPlus,
+  IconRedo,
   IconSidebar,
+  IconUndo,
   IconSun,
   KindIcon,
 } from './icons';
@@ -201,6 +203,8 @@ function Canvas() {
   );
   const compact = view === 'compact';
   const rf = useReactFlow();
+  // Touch screens: no hover or keyboard, so show undo buttons and let card drags pan.
+  const touch = useMemo(() => window.matchMedia('(pointer: coarse)').matches, []);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Ask the inspector to focus its title; `n` changes on every request so repeats still fire.
@@ -820,6 +824,7 @@ function Canvas() {
           onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
           nodeDragThreshold={5}
+          nodesDraggable={!touch}
           elevateNodesOnSelect={false}
           nodesConnectable={false}
           deleteKeyCode={null}
@@ -887,6 +892,17 @@ function Canvas() {
         )}
 
         <div className="pill glass top-right">
+          {touch && (
+            <>
+              <button className="icon-btn" onClick={undo} disabled={!doc.canUndo} aria-label="Undo">
+                <IconUndo size={16} />
+              </button>
+              <button className="icon-btn" onClick={redo} disabled={!doc.canRedo} aria-label="Redo">
+                <IconRedo size={16} />
+              </button>
+              <span className="pill-sep" />
+            </>
+          )}
           <div className="seg-ctl" role="group" aria-label="View">
             <button
               className={`icon-btn ${compact ? 'is-on' : ''}`}
@@ -1019,6 +1035,16 @@ function Canvas() {
                 problem,
                 chosen: optionsOf(problem.id).find((o) => o.chosen) ?? null,
                 onRationale: (v: string) => update(problem.id, { rationale: v }),
+              };
+            })()}
+            reorder={(() => {
+              if (!touch) return undefined;
+              const sibs = items.filter((i) => i.parentId === selected.parentId && i.kind === selected.kind);
+              const i = sibs.findIndex((x) => x.id === selected.id);
+              return {
+                canUp: i > 0,
+                canDown: i < sibs.length - 1,
+                move: (dir: -1 | 1) => move(selected.id, i + dir),
               };
             })()}
             onCompare={
