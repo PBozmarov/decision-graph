@@ -32,7 +32,7 @@ import {
 } from './model';
 import { cardSize } from './compact';
 import { useDoc } from './store';
-import { cloudEnabled, signInWithGoogle, signOutUser, useAuth } from './cloud';
+import { NotAllowedError, cloudEnabled, signInWithGoogle, signOutUser, useAuth } from './cloud';
 import { TEMPLATES, type Template } from './templates';
 import {
   IconCompact,
@@ -898,6 +898,10 @@ function Canvas() {
                 resetView();
                 fit();
               } catch (e) {
+                if (e instanceof NotAllowedError) {
+                  setToast('Sign-in is limited to the owner. You can still use it without an account.');
+                  return;
+                }
                 const code = (e as { code?: string }).code ?? '';
                 if (!code.includes('popup-closed') && !code.includes('cancelled-popup')) {
                   setToast(code.includes('popup-blocked') ? 'Allow pop-ups to sign in' : 'Sign-in failed, please try again');

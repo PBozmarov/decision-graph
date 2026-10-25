@@ -129,7 +129,7 @@ export function Sidebar({
               <GoogleMark />
               Sign in with Google
             </button>
-            <div className="account-note">Sync your decisions across devices. Only you can see them.</div>
+            <div className="account-note">Owner sign-in. Without an account, decisions stay in this browser.</div>
           </div>
         )}
         {account && (

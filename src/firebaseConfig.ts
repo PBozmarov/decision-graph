@@ -11,3 +11,7 @@ export const firebaseConfig = {
   messagingSenderId: '734725173894',
   appId: '1:734725173894:web:35e153015ab3c2de64d707',
 };
+
+// Private app: only this Firebase account may sign in (must match firestore.rules).
+// Any other account is signed straight back out.
+export const OWNER_UID = '8XVQGGB4jrVpNd1h90RRJ0eJo8Y2';

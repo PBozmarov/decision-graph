@@ -20,7 +20,7 @@ import {
   setDoc,
   type Firestore,
 } from 'firebase/firestore';
-import { firebaseConfig } from './firebaseConfig';
+import { OWNER_UID, firebaseConfig } from './firebaseConfig';
 import type { Item } from './model';
 
 export const cloudEnabled = !!firebaseConfig.apiKey;
@@ -63,15 +63,30 @@ export function useAuth() {
   });
   useEffect(() => {
     if (!cloudEnabled) return;
-    return onAuthStateChanged(init().auth, (u) => setState({ account: u ? toAccount(u) : null, loading: false }));
+    return onAuthStateChanged(init().auth, (u) => {
+      if (u && u.uid !== OWNER_UID) {
+        // Not the owner: don't keep them signed in.
+        void signOut(init().auth);
+        setState({ account: null, loading: false });
+        return;
+      }
+      setState({ account: u ? toAccount(u) : null, loading: false });
+    });
   }, []);
   return state;
 }
 
+/** Thrown when someone other than the owner signs in. */
+export class NotAllowedError extends Error {}
+
 export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  await signInWithPopup(init().auth, provider);
+  const { user } = await signInWithPopup(init().auth, provider);
+  if (user.uid !== OWNER_UID) {
+    await signOut(init().auth);
+    throw new NotAllowedError('This app is private');
+  }
 }
 
 export const signOutUser = () => signOut(init().auth);

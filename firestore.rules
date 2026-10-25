@@ -1,11 +1,17 @@
 rules_version = '2';
 
-// Each signed-in user can only read and write their own decisions (users/{uid}/docs/*).
-// Everything else is denied.
+// Private app: only the owner's account may read or write, and only its own decisions.
+// The owner is identified by Firebase user ID (not email) so no personal data is in the repo.
+// Any other Google account can complete Google's sign-in screen but is refused here.
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && uid == '8XVQGGB4jrVpNd1h90RRJ0eJo8Y2';
+    }
     match /users/{uid}/docs/{docId} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
     }
   }
 }
