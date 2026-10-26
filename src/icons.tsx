@@ -218,3 +218,15 @@ export const IconArrowDown = ({ size }: { size?: number }) => (
     <path d="M12 5v14M6 13l6 6 6-6" />
   </Svg>
 );
+export const IconDownload = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M12 3.5v11M8 10.5l4 4 4-4" />
+    <path d="M4.5 15v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+  </Svg>
+);
+export const IconUpload = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M12 14.5v-11M8 7.5l4-4 4 4" />
+    <path d="M4.5 15v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+  </Svg>
+);

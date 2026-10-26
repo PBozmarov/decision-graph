@@ -1,4 +1,4 @@
-import { KINDS, SIZE, PILL_KINDS, type Item, type Kind, type Size } from './model';
+import { KINDS, SIZE, PILL_KINDS, type Item, type Kind, type Size, type Verdict } from './model';
 
 // Pill geometry — must match .pill-item in index.css.
 export const PILL_H = 22;
@@ -8,6 +8,7 @@ const PILLS_TOP = 10; // space above the pill block
 const INNER_W = SIZE.option.w - 28 - 4; // card padding, plus a little slack
 export const PILL_MAX = INNER_W;
 const FONT = '560 11.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif';
+const FONT_MUST = FONT.replace('560', '650'); // .pill-item.is-must is bolder
 
 let ctx: CanvasRenderingContext2D | null = null;
 function textWidth(t: string, font = FONT) {
@@ -20,7 +21,8 @@ function textWidth(t: string, font = FONT) {
 export const pillText = (it: Item) => it.title || `Untitled ${KINDS[it.kind].label.toLowerCase()}`;
 
 export function pillWidth(it: Item) {
-  return Math.min(PILL_MAX, Math.ceil(textWidth(pillText(it))) + PILL_CHROME);
+  const font = it.kind === 'requirement' && it.must ? FONT_MUST : FONT;
+  return Math.min(PILL_MAX, Math.ceil(textWidth(pillText(it), font)) + PILL_CHROME);
 }
 
 /** Number of wrapped rows the pills take inside an option card. */
@@ -68,13 +70,38 @@ export function titleLines(it: Item) {
   return lines;
 }
 
+/* ---------- decision verdict ---------- */
+
+// Verdict geometry — must match .verdict / .vd-* in index.css.
+const FOOT_H = 15; // today's one-line .dn-foot (12px, normal line height)
+const VD_TOP = 9 + 0.5; // padding-top + separator line
+const VD_HEAD = 16;
+const VD_GAP = 7;
+const VD_ROW = 16;
+const VD_ROW_GAP = 5;
+
+/** Decision cards swap the one-line footer for the verdict once there is something to say. */
+export const showsVerdict = (v: Verdict | null | undefined): v is Verdict =>
+  !!v && v.state !== 'none' && !(v.state === 'decided' && !v.showBars);
+
+/** Lines in the bar list: every option up to 4, otherwise 3 plus a "+N more" line. */
+export const verdictLines = (v: Verdict) => Math.min(v.rows.length, 4);
+
 /** Card size: shorter when the title fits on one line; compact options grow with their pills. */
-export function cardSize(it: Item, pills: Item[] | null): Size {
+export function cardSize(it: Item, pills: Item[] | null, verdict?: Verdict | null): Size {
   const base = SIZE[it.kind];
   let h = base.h - (titleLines(it) === 1 ? titleSpec(it.kind).line : 0);
   if (pills) {
     const rows = pillRows(pills.filter((p) => PILL_KINDS.has(p.kind)));
     if (rows) h += PILLS_TOP + rows * PILL_H + (rows - 1) * PILL_GAP;
+  }
+  if (it.kind === 'problem' && showsVerdict(verdict)) {
+    let extra = VD_TOP + VD_HEAD - FOOT_H;
+    if (verdict.showBars) {
+      const n = verdictLines(verdict);
+      extra += VD_GAP + n * VD_ROW + (n - 1) * VD_ROW_GAP;
+    }
+    h += Math.ceil(extra);
   }
   return { w: base.w, h };
 }

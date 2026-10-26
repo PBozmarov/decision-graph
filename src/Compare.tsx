@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { groupChildren, optionStats, type Item, type Kind, type Stats } from './model';
+import { groupChildren, isBlocked, optionStats, verdictOf, type Item, type Kind, type Stats } from './model';
 import { IconCheck, IconClose, KindIcon } from './icons';
+import { VerdictHeadline } from './Verdict';
 
 const ROWS: { kind: Kind; title: string }[] = [
   { kind: 'requirement', title: 'Needs' },
@@ -21,6 +22,7 @@ function Entry({ it }: { it: Item }) {
         {ticked ? <IconCheck size={10} /> : <KindIcon kind={it.kind} size={12} />}
       </span>
       <span className="cmp-tx">{it.title || <span className="ph">Untitled</span>}</span>
+      {it.kind === 'requirement' && it.must && <span className="cmp-must">Must</span>}
       {weighted && (
         <span className="cmp-w" aria-label={`Impact ${it.weight} of 5`}>
           {[1, 2, 3, 4, 5].map((n) => (
@@ -54,9 +56,8 @@ export function Compare({
     return m;
   }, [options, kids]);
 
-  const nets = shown.map((o) => stats.get(o.id)!.net);
-  const best = shown.length > 1 ? Math.max(...nets) : null;
-  const bestUnique = best !== null && nets.filter((n) => n === best).length === 1;
+  // Same verdict as the decision card, but over the options currently shown.
+  const verdict = verdictOf(shown, (id) => stats.get(id)!);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -76,6 +77,7 @@ export function Compare({
           <div>
             <div className="cmp-eyebrow">Compare options</div>
             <h2>{problem.title || 'Untitled decision'}</h2>
+            <VerdictHeadline v={verdict} className="cmp-verdict" />
           </div>
           <button className="icon-btn cmp-close" onClick={onClose} aria-label="Close">
             <IconClose size={15} />
@@ -114,7 +116,7 @@ export function Compare({
               const s = stats.get(o.id)!;
               const total = s.pro + s.con + s.risk;
               const pct = (v: number) => (total ? `${(v / total) * 100}%` : '0%');
-              const isBest = bestUnique && s.net === best;
+              const isBest = verdict.leaderId === o.id;
               return (
                 <div key={o.id} className={`cmp-col-head ${o.chosen ? 'is-chosen' : ''}`}>
                   <div className="cmp-opt">
@@ -132,6 +134,7 @@ export function Compare({
                         <IconCheck size={11} /> Chosen
                       </span>
                     )}
+                    {isBlocked(s) && <span className="badge badge-blocked">Blocked</span>}
                   </div>
                   <div className="balance">
                     <span className="seg seg-pro" style={{ width: pct(s.pro) }} />
@@ -167,6 +170,9 @@ export function Compare({
                           <>
                             <div className="cmp-sum" style={k(row.kind)}>
                               {sum}
+                              {row.kind === 'requirement' && s.mustMissing > 0 && (
+                                <span className="t-con"> · {s.mustMissing} must-have missing</span>
+                              )}
                             </div>
                             <ul>
                               {list.map((it) => (

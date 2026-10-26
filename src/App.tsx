@@ -15,7 +15,9 @@ import { DecisionNode, type DNode } from './DecisionNode';
 import { Inspector } from './Inspector';
 import { Sidebar } from './Sidebar';
 import { Compare } from './Compare';
+import { Guide, type GuideState } from './Guide';
 import { docTitle, downloadBlob, graphToPng, slug, toMarkdown } from './export';
+import { parseBackup, toBackup } from './backup';
 import { ActionsContext, type Actions } from './actions';
 import {
   KINDS,
@@ -25,10 +27,12 @@ import {
   groupChildren,
   layout,
   optionStats,
+  verdictOf,
   type Item,
   type Kind,
   type Size,
   type Stats,
+  type Verdict,
 } from './model';
 import { cardSize } from './compact';
 import { useDoc } from './store';
@@ -58,8 +62,12 @@ const FIT = { minZoom: 0.5, maxZoom: 1 };
 
 /** Fit padding that keeps cards clear of the floating panels. */
 type Pad = NonNullable<FitViewOptions['padding']>;
-function fitPadding(sidebarOpen: boolean, inspectorOpen: boolean): Pad {
-  if (window.innerWidth <= 760) return { top: '76px', bottom: '64px', x: '16px' };
+function fitPadding(sidebarOpen: boolean, inspectorOpen: boolean, guideOpen = false): Pad {
+  if (window.innerWidth <= 760) {
+    // The guide is a bottom sheet on phones (max-height: min(56vh, 520px)); keep cards above it.
+    const sheet = guideOpen ? Math.round(Math.min(window.innerHeight * 0.56, 520)) + 24 : 64;
+    return { top: '76px', bottom: `${sheet}px`, x: '16px' };
+  }
   return {
     top: '84px',
     bottom: '72px',
@@ -220,6 +228,7 @@ function Canvas() {
   const [menu, setMenu] = useState<{ id: string; index: number } | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [compareId, setCompareId] = useState<string | null>(null);
+  const [guide, setGuide] = useState<GuideState | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
@@ -270,11 +279,34 @@ function Canvas() {
     [allKids, hidden],
   );
 
+  const stats = useMemo(() => {
+    const m = new Map<string, Stats>();
+    for (const it of items) if (it.kind === 'option') m.set(it.id, optionStats(allKids.get(it.id) ?? []));
+    return m;
+  }, [items, allKids]);
+
+  // Which option leads each decision (from the real items, not the drag preview).
+  const verdicts = useMemo(() => {
+    const m = new Map<string, Verdict>();
+    for (const it of items) {
+      if (it.kind !== 'problem') continue;
+      const opts = (allKids.get(it.id) ?? []).filter((k) => k.kind === 'option');
+      m.set(it.id, verdictOf(opts, (id) => stats.get(id)!));
+    }
+    return m;
+  }, [items, allKids, stats]);
+
   const sizes = useMemo(() => {
     const m = new Map<string, Size>();
-    for (const it of items) m.set(it.id, cardSize(it, compact && it.kind === 'option' ? pillsOf(it.id) : null));
+    for (const it of items)
+      m.set(
+        it.id,
+        it.kind === 'problem'
+          ? cardSize(it, null, verdicts.get(it.id))
+          : cardSize(it, compact && it.kind === 'option' ? pillsOf(it.id) : null),
+      );
     return m;
-  }, [items, compact, pillsOf]);
+  }, [items, compact, pillsOf, verdicts]);
   const sizeOf = useCallback((it: Item) => sizes.get(it.id) ?? SIZE[it.kind], [sizes]);
 
   const positions = useMemo(() => layout(shown, { size: sizeOf, hidden }), [shown, sizeOf, hidden]);
@@ -297,28 +329,18 @@ function Canvas() {
     );
   }, [items, drag?.id, sizeOf, hidden]);
 
-  const stats = useMemo(() => {
-    const m = new Map<string, Stats>();
-    for (const it of items) if (it.kind === 'option') m.set(it.id, optionStats(allKids.get(it.id) ?? []));
-    return m;
-  }, [items, allKids]);
-
   const leading = useMemo(() => {
     const out = new Set<string>();
-    for (const it of items) {
-      if (it.kind !== 'problem') continue;
-      const opts = (allKids.get(it.id) ?? []).filter((k) => k.kind === 'option');
-      const scored = opts.filter((o) => {
-        const s = stats.get(o.id)!;
-        return s.pro + s.con + s.risk > 0;
-      });
-      if (scored.length < 2) continue;
-      const nets = scored.map((o) => stats.get(o.id)!.net);
-      const best = Math.max(...nets);
-      if (nets.filter((n) => n === best).length === 1) out.add(scored[nets.indexOf(best)].id);
-    }
+    for (const v of verdicts.values()) if (v.leaderId) out.add(v.leaderId);
     return out;
-  }, [items, allKids, stats]);
+  }, [verdicts]);
+
+  // Guided start: the decision's options, and the one being weighed right now.
+  const guideOptions = useMemo(
+    () => (guide ? (allKids.get(guide.problemId) ?? []).filter((c) => c.kind === 'option') : []),
+    [guide, allKids],
+  );
+  const guidedId = guide?.step === 'weigh' ? (guideOptions[guide.index]?.id ?? null) : null;
 
   // Focus a branch: that subtree plus its ancestors stay lit, the rest fades.
   const focusSet = useMemo(() => {
@@ -373,9 +395,11 @@ function Canvas() {
             it.kind === 'problem'
               ? ((kids.get(it.id) ?? []).find((c) => c.kind === 'option' && c.chosen)?.title ?? null)
               : null,
+          verdict: it.kind === 'problem' ? (verdicts.get(it.id) ?? null) : null,
           leading: leading.has(it.id),
           dimmed,
           faded,
+          guided: it.id === guidedId,
           w,
           h,
           pills,
@@ -404,7 +428,7 @@ function Canvas() {
     };
     for (const r of kids.get(null) ?? []) walk(r, false, false);
     return { nodes, edges };
-  }, [kids, hidden, compact, pillsOf, positions, sizeOf, selectedId, stats, leading, drag, editing, menu, focusSet]);
+  }, [kids, hidden, compact, pillsOf, positions, sizeOf, selectedId, stats, verdicts, leading, drag, editing, menu, focusSet, guidedId]);
 
   const nodeIds = useMemo(() => new Set(nodes.map((n) => n.id)), [nodes]);
 
@@ -449,13 +473,21 @@ function Canvas() {
     () => ({
       add: (parentId, kind) => handleAdd(parentId, kind),
       update,
-      select: (id) => select(id),
+      // Interacting with a card (or a pill) leaves the guide.
+      select: (id) => {
+        setGuide(null);
+        select(id);
+      },
       toggleMenu: (id) => {
+        setGuide(null);
         setSelectedId(id);
         setEditing(null);
         setMenu((m) => (m?.id === id ? null : { id, index: 0 }));
       },
-      startEdit,
+      startEdit: (id) => {
+        setGuide(null);
+        startEdit(id);
+      },
       stopEdit: () => setEditing(null),
       editKey: (id, key) => {
         setEditing(null);
@@ -510,11 +542,21 @@ function Canvas() {
 
   /* ---------- camera ---------- */
 
-  const panels = useRef({ side: sidebar === 'open', insp: !!selectedId });
-  panels.current = { side: sidebar === 'open', insp: !!selectedId };
-  const padding = useCallback(() => fitPadding(panels.current.side, panels.current.insp), []);
+  // The guide takes the inspector's place, so fits keep cards clear of it too.
+  const panels = useRef({ side: sidebar === 'open', insp: !!selectedId || !!guide, guide: !!guide });
+  panels.current = { side: sidebar === 'open', insp: !!selectedId || !!guide, guide: !!guide };
+  const padding = useCallback(
+    () => fitPadding(panels.current.side, panels.current.insp, panels.current.guide),
+    [],
+  );
   const fit = useCallback(
     () => setTimeout(() => rf.fitView({ duration: 600, padding: fitPadding(panels.current.side, false), ...FIT }), 50),
+    [rf],
+  );
+  // Whole graph, clear of the guide panel; a beat later so the new layout is in place.
+  const fitGuide = useCallback(
+    () =>
+      setTimeout(() => rf.fitView({ duration: 450, padding: fitPadding(panels.current.side, true, true), ...FIT }), 60),
     [rf],
   );
 
@@ -588,9 +630,58 @@ function Canvas() {
     // Only when the focused branch changes, not on every edit inside it.
   }, [focusId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ---------- guided start ---------- */
+
+  // The guide's decision can vanish (undo, sync, delete); the options it walks through can shrink.
+  // Adjusted during render (React's pattern for state derived from changing data) rather than in an effect.
+  if (guide) {
+    const n = guideOptions.length;
+    const fixed = !byId.has(guide.problemId)
+      ? null
+      : guide.step === 'weigh' && !n
+        ? { ...guide, step: 'options' as const, index: 0 }
+        : guide.step === 'weigh' && guide.index >= n
+          ? { ...guide, index: n - 1 }
+          : guide;
+    if (fixed !== guide) setGuide(fixed);
+  }
+
+  // Options step: keep the whole graph in view as options come and go.
+  const guideStep = guide?.step;
+  useEffect(() => {
+    if (guideStep !== 'options') return;
+    const t = fitGuide();
+    return () => clearTimeout(t);
+  }, [guideStep, guideOptions.length, fitGuide]);
+
+  // Weigh step: frame the option being weighed and its branch (again as its pros/cons grow).
+  // On wide screens the decision card stays in frame too, so its verdict updates in view.
+  const guidedKids = guidedId ? (allKids.get(guidedId)?.length ?? 0) : 0;
+  useEffect(() => {
+    if (!guidedId) return;
+    const t = setTimeout(() => {
+      const ids = new Set([guidedId]);
+      const problemId = guide?.problemId;
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const n of latest.current.items)
+          if (n.parentId && ids.has(n.parentId) && !ids.has(n.id)) {
+            ids.add(n.id);
+            grew = true;
+          }
+      }
+      if (problemId && window.innerWidth > 760) ids.add(problemId);
+      const nodes = nodesRef.current.filter((n) => ids.has(n.id)).map((n) => ({ id: n.id }));
+      rf.fitView({ nodes, padding: padding(), maxZoom: 1, duration: 500 });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [guidedId, guidedKids, guide?.problemId, rf, padding]);
+
   /* ---------- library ---------- */
 
   const resetView = useCallback(() => {
+    setGuide(null);
     setSelectedId(null);
     setFresh(null);
     setEditing(null);
@@ -705,6 +796,11 @@ function Canvas() {
         if (e.key === 'Escape') t.blur();
         return;
       }
+      // Guided start: no canvas shortcuts; Escape (outside an input) closes it.
+      if (guide) {
+        if (e.key === 'Escape') setGuide(null);
+        return;
+      }
       if (mod || e.altKey || compareId) return;
 
       // Add menu open: arrows / Enter / number keys pick a type.
@@ -799,7 +895,7 @@ function Canvas() {
     return () => window.removeEventListener('keydown', onKey);
   }, [
     selectedId, byId, kids, nodeIds, menu, focusId, select, undo, redo, deleteItem,
-    handleAdd, startEdit, toggleFocus, navChildren, navSiblings, pickMenu, compareId, optionsOf,
+    handleAdd, startEdit, toggleFocus, navChildren, navSiblings, pickMenu, compareId, optionsOf, guide,
   ]);
 
   const selected = selectedId ? byId.get(selectedId) : undefined;
@@ -812,15 +908,19 @@ function Canvas() {
 
   return (
     <ActionsContext.Provider value={actions}>
-      <div className={`app ${sideOpen ? 'side-open' : ''} ${selected ? 'insp-open' : ''}`}>
+      <div className={`app ${sideOpen ? 'side-open' : ''} ${selected && !guide ? 'insp-open' : ''}`}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
           onNodeClick={(_, n) => {
+            setGuide(null);
             if (n.id !== selectedId) select(n.id);
           }}
-          onNodeDoubleClick={(_, n) => startEdit(n.id)}
+          onNodeDoubleClick={(_, n) => {
+            setGuide(null);
+            startEdit(n.id);
+          }}
           onPaneClick={() => select(null)}
           onNodeDragStart={onNodeDragStart}
           onNodeDrag={onNodeDrag}
@@ -889,6 +989,23 @@ function Canvas() {
               closeSideOnMobile();
               doc.newDoc();
               resetView();
+            }}
+            onBackup={() => {
+              const day = new Date().toISOString().slice(0, 10);
+              downloadBlob(new Blob([toBackup(doc.docs)], { type: 'application/json' }), `decisions-backup-${day}.json`);
+              setToast('Backup downloaded');
+            }}
+            onRestore={async (file) => {
+              try {
+                const list = parseBackup(await file.text());
+                closeSideOnMobile();
+                doc.importDocs(list);
+                resetView();
+                fit();
+                setToast(`Restored ${list.length} decision${list.length === 1 ? '' : 's'}`);
+              } catch (e) {
+                setToast(e instanceof Error ? e.message : 'Could not read that file');
+              }
             }}
             account={cloudEnabled ? auth.account : undefined}
             syncStatus={doc.syncStatus}
@@ -998,7 +1115,7 @@ function Canvas() {
 
         <ZoomPill padding={padding} />
 
-        {focused && (
+        {focused && !guide && (
           <div className="focus-pill glass">
             <IconFocus size={14} />
             <span className="focus-title">{focused.title || KINDS[focused.kind].label}</span>
@@ -1006,7 +1123,7 @@ function Canvas() {
           </div>
         )}
 
-        {items.length > 0 && (
+        {items.length > 0 && !guide && (
           <div className="hint glass">
             {editing ? (
               <>
@@ -1033,7 +1150,29 @@ function Canvas() {
           </div>
         )}
 
-        {selected && (
+        {guide && byId.get(guide.problemId) && (
+          <Guide
+            problem={byId.get(guide.problemId)!}
+            options={optionsOf(guide.problemId)}
+            childrenOf={(id) => allKids.get(id) ?? []}
+            guide={guide}
+            setGuide={setGuide}
+            store={{ add, update, remove }}
+            onDone={() => {
+              setGuide(null);
+              select(null);
+              fit();
+            }}
+            onSkip={() => {
+              const id = guide.problemId;
+              setGuide(null);
+              select(id);
+              setRevealId(id); // the weigh step may have zoomed in on an option
+            }}
+          />
+        )}
+
+        {selected && !guide && (
           <Inspector
             item={selected}
             stats={stats.get(selected.id) ?? null}
@@ -1061,6 +1200,7 @@ function Canvas() {
                 problem,
                 chosen: optionsOf(problem.id).find((o) => o.chosen) ?? null,
                 onRationale: (v: string) => update(problem.id, { rationale: v }),
+                verdict: verdicts.get(problem.id) ?? null,
               };
             })()}
             reorder={(() => {
@@ -1073,6 +1213,13 @@ function Canvas() {
                 move: (dir: -1 | 1) => move(selected.id, i + dir),
               };
             })()}
+            blockers={
+              selected.kind === 'option'
+                ? (allKids.get(selected.id) ?? [])
+                    .filter((c) => c.kind === 'requirement' && c.must && !c.met)
+                    .map((c) => c.title)
+                : undefined
+            }
             onCompare={
               selected.kind === 'problem' && optionsOf(selected.id).length >= 2
                 ? () => setCompareId(selected.id)
@@ -1113,10 +1260,10 @@ function Canvas() {
               fit();
             }}
             onStart={(title) => {
+              // Cards appear live as the guide is answered; the guide's camera effect fits the view.
               const id = add(null, 'problem', title);
-              setSelectedId(id);
-              setMenu({ id, index: 0 });
-              fit();
+              select(null);
+              setGuide({ problemId: id, step: 'options', index: 0 });
             }}
           />
         )}

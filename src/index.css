@@ -197,7 +197,8 @@ textarea:focus-visible {
 .dn:hover {
   box-shadow: var(--shadow-hover);
 }
-.dn.is-selected {
+.dn.is-selected,
+.dn.is-guided {
   border-color: color-mix(in srgb, var(--k) 70%, transparent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--k) 16%, transparent), var(--shadow-hover);
 }
@@ -341,6 +342,39 @@ textarea:focus-visible {
 .badge-lead {
   color: var(--pro);
   background: color-mix(in srgb, var(--pro) 14%, transparent);
+}
+.badge-must {
+  color: var(--requirement);
+  background: color-mix(in srgb, var(--requirement) 14%, transparent);
+}
+.badge-blocked {
+  color: var(--con);
+  background: color-mix(in srgb, var(--con) 13%, transparent);
+}
+
+/* option missing a must-have: ruled out, so it recedes */
+.dn-option.is-blocked .dn-title {
+  color: var(--text-2);
+}
+.dn-option.is-blocked .balance {
+  opacity: 0.4;
+}
+.dn-option.is-blocked .dn-stats .stat {
+  opacity: 0.55;
+}
+/* the right-hand note must never wrap: card heights are fixed */
+.dn-stats .dn-spacer {
+  margin-left: -9px;
+}
+.dn-stats > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dn-stats .dn-must {
+  font-size: 10.5px;
+  align-self: center;
 }
 
 /* weight dots */
@@ -813,6 +847,9 @@ textarea:focus-visible {
 .switch.switch-action.on {
   background: var(--action);
 }
+.switch.switch-must.on {
+  background: var(--requirement);
+}
 .switch.on span {
   transform: translateX(20px);
 }
@@ -841,6 +878,11 @@ textarea:focus-visible {
   font-size: 11px;
   font-weight: 550;
   color: var(--text-2);
+}
+.insp-blocked {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 .net {
   display: flex;
@@ -1199,6 +1241,14 @@ button.brand.is-on .brand-side {
   background: var(--fill);
   color: var(--text);
 }
+.side-example:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.side-backup {
+  display: flex;
+  gap: 2px;
+}
 
 /* ---------- view toggle ---------- */
 .seg-ctl {
@@ -1249,6 +1299,10 @@ button.brand.is-on .brand-side {
 }
 .pill-item:active {
   transform: scale(0.96);
+}
+.pill-item.is-must {
+  box-shadow: inset 0 0 0 1.25px color-mix(in srgb, var(--k) 55%, transparent);
+  font-weight: 650;
 }
 .pill-item.is-sel {
   box-shadow: 0 0 0 1.5px var(--k), 0 0 0 4px color-mix(in srgb, var(--k) 18%, transparent);
@@ -1401,6 +1455,125 @@ button.brand.is-on .brand-side {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* ---------- verdict on the decision card ---------- */
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 9px;
+  border-top: 0.5px solid var(--card-border);
+}
+.vd-text b {
+  color: var(--text);
+  font-weight: 650;
+}
+.vd-text .vd-lead {
+  color: var(--pro);
+}
+.vd-text.vd-decided,
+.vd-text.vd-decided b {
+  color: var(--option);
+  font-weight: 650;
+}
+.vd-text.vd-unscored {
+  color: var(--text-3);
+}
+.vd-text svg {
+  vertical-align: -1px;
+}
+.vd-head {
+  font-size: 12.5px;
+  line-height: 16px;
+  height: 16px;
+  color: var(--text-2);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vd-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.vd-row {
+  display: grid;
+  grid-template-columns: minmax(0, 104px) 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+  font-size: 11.5px;
+}
+.vd-name {
+  color: var(--text-2);
+  font-weight: 560;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vd-track {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--fill);
+  overflow: hidden;
+}
+.vd-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-3) 70%, transparent);
+  transition: width 500ms var(--spring);
+}
+.vd-row.is-lead .vd-bar {
+  background: var(--pro);
+}
+.vd-row.is-lead .vd-name {
+  color: var(--text);
+  font-weight: 650;
+}
+.vd-row.is-chosen .vd-bar {
+  background: var(--option);
+}
+.vd-row.is-chosen .vd-name {
+  color: var(--option);
+  font-weight: 650;
+}
+.vd-row.is-blocked .vd-name {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.vd-num {
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.vd-num.t-pro {
+  color: var(--pro);
+}
+.vd-num.t-con,
+.vd-row.is-blocked .vd-num {
+  color: var(--con);
+}
+.vd-row.is-blocked .vd-num {
+  font-size: 10.5px;
+}
+.vd-more {
+  height: 16px;
+  line-height: 16px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.cmp-verdict {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.insp-verdict {
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
 .record-chosen {
   display: flex;
   align-items: center;
@@ -1726,6 +1899,20 @@ button.brand.is-on .brand-side {
 }
 .cmp-w i.on {
   background: var(--k);
+}
+.cmp-must {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  margin-top: 1px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--requirement);
+  background: color-mix(in srgb, var(--requirement) 14%, transparent);
 }
 .cmp-none {
   font-size: 13px;
@@ -2053,5 +2240,240 @@ button.brand.is-on .brand-side {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* ---------- guided start ---------- */
+/* Same floating panel as the inspector, but it hugs its content; the body scrolls, the footer stays. */
+.guide {
+  bottom: auto;
+  max-height: calc(100% - 92px);
+  overflow: hidden;
+  padding-bottom: 16px;
+}
+.guide-head {
+  display: flex;
+  align-items: center;
+  height: 28px;
+}
+.guide-steps {
+  display: flex;
+  gap: 5px;
+}
+.guide-steps i {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-2);
+  transition: background 260ms ease;
+}
+.guide-steps i.on {
+  background: var(--option);
+}
+.guide-skip {
+  height: 28px;
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  transition: color 140ms ease;
+}
+.guide-skip:hover {
+  color: var(--text);
+}
+.guide .guide-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* room for the focus halo inside the scroll box */
+  margin: -4px;
+  padding: 4px;
+  scroll-padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fade 260ms ease both;
+}
+.guide-body > * {
+  flex-shrink: 0;
+}
+.guide-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guide-eyebrow {
+  color: var(--option);
+}
+.guide-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.guide-sub {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.guide-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 12px 0 6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--problem) 8%, transparent);
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--text);
+}
+.guide-context .dn-chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+.guide-context-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.guide-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.guide-label {
+  color: var(--k);
+}
+.guide-label span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guide-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 6px 0 7px;
+  border-radius: 10px;
+  background: var(--fill);
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+.guide-row:focus-within {
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--card-border), 0 0 0 4px color-mix(in srgb, var(--option) 18%, transparent);
+}
+.guide-row .dn-chip {
+  width: 22px;
+  height: 22px;
+}
+.guide-row input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+}
+.guide-row input::placeholder {
+  color: var(--text-3);
+}
+.guide-ghost:not(:focus-within) .dn-chip {
+  opacity: 0.5;
+}
+.guide-del {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--text-2);
+  opacity: 0;
+  transition: opacity 140ms ease, background 140ms ease;
+}
+.guide-row:hover .guide-del,
+.guide-row:focus-within .guide-del {
+  opacity: 1;
+}
+.guide-del:hover {
+  background: var(--fill-2);
+  color: var(--text);
+}
+@media (hover: none) {
+  .guide-del {
+    opacity: 1;
+  }
+}
+.guide-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--glass-border);
+}
+.guide-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding-top: 2px;
+}
+.guide-foot .btn-primary:disabled {
+  opacity: 0.4;
+  filter: none;
+  transform: none;
+  cursor: default;
+}
+.guide-tip {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.guide-tip kbd {
+  font: inherit;
+  font-weight: 650;
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: var(--fill-2);
+  color: var(--text-2);
+}
+.guide-nav {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 8px;
+}
+.guide-nav .btn-secondary {
+  height: 42px;
+  border-radius: 12px;
+  font-size: 15px;
+}
+@media (max-width: 760px) {
+  /* bottom sheet: the graph stays visible above it */
+  .guide {
+    top: auto;
+    bottom: 8px;
+    max-height: min(56vh, 520px);
   }
 }

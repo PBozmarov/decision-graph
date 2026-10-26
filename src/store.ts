@@ -318,6 +318,19 @@ export function useDoc(uid: string | null) {
     return doc.id;
   }, []);
 
+  /** Add restored decisions (as new copies, never overwriting) and open the most recent one. */
+  const importDocs = useCallback((list: Pick<Doc, 'items' | 'createdAt' | 'updatedAt'>[]) => {
+    if (!list.length) return;
+    lastEdit.current = null;
+    const added = list.map((d) => ({ ...d, id: crypto.randomUUID() }));
+    const open = [...added].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    setS((st) => {
+      // Drop an untouched empty decision so it doesn't linger at the top of the list.
+      const rest = st.lib.docs.filter((d) => d.items.length || d.id !== st.lib.activeId);
+      return { ...st, lib: { docs: [...added, ...rest], activeId: open.id }, past: [], future: [] };
+    });
+  }, []);
+
   const deleteDoc = useCallback((id: string) => {
     lastEdit.current = null;
     setS((st) => {
@@ -413,6 +426,7 @@ export function useDoc(uid: string | null) {
     activeId: active.id,
     switchDoc,
     newDoc,
+    importDocs,
     deleteDoc,
     replaceItems,
     add,

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
-import { KINDS, isWeighted, type Item, type Stats } from './model';
+import { KINDS, isWeighted, type Item, type Stats, type Verdict } from './model';
 import { Dots } from './DecisionNode';
+import { VerdictHeadline } from './Verdict';
 import { IconArrowDown, IconArrowUp, IconCheck, IconClose, IconColumns, IconFocus, IconTrash, KindIcon } from './icons';
 
 const IMPACT = ['', 'Minor', 'Low', 'Moderate', 'High', 'Critical'];
@@ -55,6 +56,7 @@ export function Inspector({
   record,
   onCompare,
   reorder,
+  blockers,
 }: {
   item: Item;
   stats: Stats | null;
@@ -69,11 +71,13 @@ export function Inspector({
   onFocus?: () => void;
   focused?: boolean;
   /** Decision record: the decision this card belongs to and its chosen option. */
-  record?: { problem: Item; chosen: Item | null; onRationale: (v: string) => void };
+  record?: { problem: Item; chosen: Item | null; onRationale: (v: string) => void; verdict?: Verdict | null };
   /** Present on decisions with 2+ options. */
   onCompare?: () => void;
   /** Touch screens: move among same-type siblings (replaces drag to reorder). */
   reorder?: { canUp: boolean; canDown: boolean; move: (dir: -1 | 1) => void };
+  /** Options: titles of the unmet must-haves that rule this option out. */
+  blockers?: string[];
 }) {
   const meta = KINDS[item.kind];
   const style = { '--k': `var(--${item.kind})` } as CSSProperties;
@@ -144,6 +148,23 @@ export function Inspector({
         </section>
       )}
 
+      {item.kind === 'requirement' && (
+        <section className="insp-section row">
+          <div>
+            <div className="insp-row-title">Must-have</div>
+            <div className="insp-row-sub">{item.must ? 'Options without it are ruled out' : 'Nice to have'}</div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={!!item.must}
+            className={`switch switch-must ${item.must ? 'on' : ''}`}
+            onClick={() => onUpdate({ must: !item.must })}
+          >
+            <span />
+          </button>
+        </section>
+      )}
+
       {item.kind === 'action' && (
         <section className="insp-section row">
           <div>
@@ -184,6 +205,12 @@ export function Inspector({
               <span>Needs</span>
             </div>
           </div>
+          {blockers && blockers.length > 0 && (
+            <div className="insp-blocked t-con">
+              Missing a must-have: {blockers[0] || 'Untitled requirement'}
+              {blockers.length > 1 && ` and ${blockers.length - 1} more`}
+            </div>
+          )}
           <div className="net">
             Net score
             <b className={stats.net > 0 ? 't-pro' : stats.net < 0 ? 't-con' : ''}>
@@ -220,7 +247,10 @@ export function Inspector({
               </div>
             </div>
           ) : (
-            <div className="insp-row-sub">No path chosen yet. Pick one from an option, or compare them side by side.</div>
+            <>
+              {record.verdict && <VerdictHeadline v={record.verdict} className="insp-verdict" />}
+              <div className="insp-row-sub">No path chosen yet. Pick one from an option, or compare them side by side.</div>
+            </>
           )}
           {record.chosen && (
             <AutoText

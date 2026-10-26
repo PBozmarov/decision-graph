@@ -1,9 +1,10 @@
 import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { KINDS, isWeighted, type Item, type Stats } from './model';
-import { pillText } from './compact';
+import { KINDS, isBlocked, isWeighted, type Item, type Stats, type Verdict } from './model';
+import { pillText, showsVerdict } from './compact';
 import { useActions } from './actions';
 import { IconCheck, IconChevron, IconPlus, KindIcon } from './icons';
+import { VerdictHeadline } from './Verdict';
 
 export type DNodeData = {
   item: Item;
@@ -12,9 +13,13 @@ export type DNodeData = {
   optionCount: number;
   /** Decision cards: title of the chosen option, if any. */
   chosenTitle: string | null;
+  /** Decision cards: which option is ahead. */
+  verdict: Verdict | null;
   leading: boolean;
   dimmed: boolean;
   faded: boolean;
+  /** Guided start: the option being weighed (a ring, without selecting it). */
+  guided: boolean;
   w: number;
   h: number;
   /** Compact view: children drawn as pills inside this card. */
@@ -86,13 +91,49 @@ function Balance({ s }: { s: Stats }) {
           </span>
         )}
         <span className="dn-spacer" />
-        {s.reqTotal > 0 && (
-          <span className={missing ? 't-warn' : 't-ok'}>
-            {missing ? `${missing} missing` : 'All requirements met'}
-          </span>
+        {s.mustMissing > 0 ? (
+          <span className="t-con dn-must">{s.mustMissing} must-have missing</span>
+        ) : (
+          s.reqTotal > 0 && (
+            <span className={missing ? 't-warn' : 't-ok'}>
+              {missing ? `${missing} missing` : 'All requirements met'}
+            </span>
+          )
         )}
       </div>
     </>
+  );
+}
+
+function VerdictBlock({ v }: { v: Verdict }) {
+  const rows = v.rows.length <= 4 ? v.rows : v.rows.slice(0, 3);
+  const num = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+  return (
+    <div className="verdict">
+      <VerdictHeadline v={v} className="vd-head" />
+      {v.showBars && (
+        <div className="vd-rows">
+          {rows.map((r) => (
+            <div
+              key={r.id}
+              className={cx(
+                'vd-row',
+                r.blocked ? 'is-blocked' : r.chosen ? 'is-chosen' : v.state !== 'decided' && r.id === v.leaderId && 'is-lead',
+              )}
+            >
+              <span className="vd-name">{r.title || 'Untitled option'}</span>
+              <span className="vd-track">
+                <span className="vd-bar" style={{ width: `${r.pct}%` }} />
+              </span>
+              <span className={cx('vd-num', !r.blocked && (r.net > 0 ? 't-pro' : r.net < 0 ? 't-con' : ''))}>
+                {r.blocked ? 'Blocked' : num(r.net)}
+              </span>
+            </div>
+          ))}
+          {v.rows.length > 4 && <div className="vd-more">+{v.rows.length - 3} more</div>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -140,9 +181,15 @@ function Pill({ p, selected }: { p: Item; selected: boolean }) {
   const ticked = (p.kind === 'requirement' && p.met) || (p.kind === 'action' && p.done);
   return (
     <button
-      className={cx('pill-item nodrag', selected && 'is-sel', ticked && 'is-ticked', p.kind === 'action' && p.done && 'is-done')}
+      className={cx(
+        'pill-item nodrag',
+        selected && 'is-sel',
+        ticked && 'is-ticked',
+        p.kind === 'action' && p.done && 'is-done',
+        p.kind === 'requirement' && p.must && 'is-must',
+      )}
       style={{ '--k': `var(--${p.kind})` } as CSSProperties}
-      title={pillText(p)}
+      title={p.kind === 'requirement' && p.must ? `${pillText(p)} · must-have` : pillText(p)}
       onClick={(e) => {
         e.stopPropagation();
         select(p.id);
@@ -164,6 +211,7 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
   const meta = KINDS[item.kind];
   const canAdd = meta.children.length > 0;
   const menu = data.menuOpen;
+  const blocked = item.kind === 'option' && isBlocked(stats);
 
   const style = { width: w, height: h, '--k': `var(--${item.kind})` } as CSSProperties;
 
@@ -173,11 +221,13 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
         'dn',
         `dn-${item.kind}`,
         selected && 'is-selected',
+        data.guided && 'is-guided',
         dimmed && 'is-dimmed',
         faded && 'is-faded',
         data.editing && 'is-editing',
         item.collapsed && childCount > 0 && 'is-collapsed',
         item.chosen && 'is-chosen',
+        blocked && 'is-blocked',
       )}
       style={style}
     >
@@ -188,12 +238,14 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
           <KindIcon kind={item.kind} size={14} />
         </span>
         <span className="dn-kind">{meta.label}</span>
+        {item.kind === 'requirement' && item.must && <span className="badge badge-must">Must-have</span>}
         {item.chosen && (
           <span className="badge badge-chosen">
             <IconCheck size={11} /> Chosen
           </span>
         )}
-        {leading && !item.chosen && <span className="badge badge-lead">Leading</span>}
+        {blocked && !item.chosen && <span className="badge badge-blocked">Blocked</span>}
+        {leading && !item.chosen && !blocked && <span className="badge badge-lead">Leading</span>}
         <span className="dn-spacer" />
 
         {isWeighted(item.kind) && (
@@ -254,7 +306,8 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
           ))}
         </div>
       )}
-      {item.kind === 'problem' && (
+      {item.kind === 'problem' && showsVerdict(data.verdict) && <VerdictBlock v={data.verdict} />}
+      {item.kind === 'problem' && !showsVerdict(data.verdict) && (
         <div className="dn-foot">
           {data.chosenTitle !== null ? (
             <span className="dn-decided">

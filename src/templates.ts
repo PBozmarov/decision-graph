@@ -49,7 +49,7 @@ const buyOrRent = () =>
 
     const buy = add(root, 'option', 'Buy a home');
     add(buy, 'requirement', '20% down payment saved');
-    add(buy, 'requirement', 'Stable income for the next 5+ years', { met: true });
+    add(buy, 'requirement', 'Stable income for the next 5+ years', { met: true, must: true });
     add(buy, 'pro', 'Building equity instead of paying rent', { weight: 4 });
     add(buy, 'pro', 'Freedom to renovate', { weight: 2 });
     add(buy, 'con', 'Big upfront costs and fees', { weight: 4 });

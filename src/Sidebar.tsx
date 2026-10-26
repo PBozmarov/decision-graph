@@ -1,6 +1,7 @@
 import type { Doc, SyncStatus } from './store';
 import type { Account } from './cloud';
-import { IconCheck, IconPlus, IconSparkle, IconTrash } from './icons';
+import { useRef } from 'react';
+import { IconCheck, IconDownload, IconPlus, IconSparkle, IconTrash, IconUpload } from './icons';
 
 const SYNC_LABEL: Record<SyncStatus, string> = {
   local: 'On this device',
@@ -50,6 +51,8 @@ export function Sidebar({
   onNew,
   onDelete,
   onTemplate,
+  onBackup,
+  onRestore,
   account,
   syncStatus,
   onSignIn,
@@ -61,6 +64,8 @@ export function Sidebar({
   onNew: () => void;
   onDelete: (id: string) => void;
   onTemplate: () => void;
+  onBackup: () => void;
+  onRestore: (file: File) => void;
   /** undefined = accounts not configured; null = signed out. */
   account?: Account | null;
   syncStatus: SyncStatus;
@@ -68,6 +73,7 @@ export function Sidebar({
   onSignOut: () => void;
 }) {
   const sorted = [...docs].sort((a, b) => b.updatedAt - a.updatedAt);
+  const fileRef = useRef<HTMLInputElement>(null);
   return (
     <aside className="sidebar glass">
       <header className="side-head">
@@ -123,6 +129,34 @@ export function Sidebar({
         <button className="side-example" onClick={onTemplate}>
           <IconSparkle size={13} /> Start from a template
         </button>
+        <div className="side-backup">
+          <button
+            className="side-example"
+            onClick={onBackup}
+            disabled={!docs.some((d) => d.items.length)}
+            title="Download all decisions as a backup file"
+          >
+            <IconDownload size={13} /> Back up
+          </button>
+          <button
+            className="side-example"
+            onClick={() => fileRef.current?.click()}
+            title="Add decisions from a backup file"
+          >
+            <IconUpload size={13} /> Restore
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) onRestore(f);
+            }}
+          />
+        </div>
         {account === null && (
           <div className="account">
             <button className="google-btn" onClick={onSignIn}>

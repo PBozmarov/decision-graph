@@ -8,6 +8,7 @@ export type Item = {
   notes: string;
   weight: number; // 1–5, used by pro / con / risk
   met: boolean; // used by requirement
+  must?: boolean; // used by requirement: an option missing a must-have is ruled out
   done?: boolean; // used by action
   chosen: boolean; // used by option
   rationale?: string; // used by problem: why the chosen path won
@@ -84,11 +85,24 @@ export type Stats = {
   reqTotal: number;
   actDone: number;
   actTotal: number;
+  mustTotal: number;
+  mustMissing: number;
   net: number;
 };
 
 export function optionStats(children: Item[]): Stats {
-  const s: Stats = { pro: 0, con: 0, risk: 0, reqMet: 0, reqTotal: 0, actDone: 0, actTotal: 0, net: 0 };
+  const s: Stats = {
+    pro: 0,
+    con: 0,
+    risk: 0,
+    reqMet: 0,
+    reqTotal: 0,
+    actDone: 0,
+    actTotal: 0,
+    mustTotal: 0,
+    mustMissing: 0,
+    net: 0,
+  };
   for (const c of children) {
     if (c.kind === 'pro') s.pro += c.weight;
     else if (c.kind === 'con') s.con += c.weight;
@@ -96,6 +110,10 @@ export function optionStats(children: Item[]): Stats {
     else if (c.kind === 'requirement') {
       s.reqTotal++;
       if (c.met) s.reqMet++;
+      if (c.must) {
+        s.mustTotal++;
+        if (!c.met) s.mustMissing++;
+      }
     } else if (c.kind === 'action') {
       s.actTotal++;
       if (c.done) s.actDone++;
@@ -103,6 +121,77 @@ export function optionStats(children: Item[]): Stats {
   }
   s.net = s.pro - s.con - s.risk;
   return s;
+}
+
+/** An option missing a must-have is ruled out. */
+export const isBlocked = (s: Stats | null | undefined) => !!s && s.mustMissing > 0;
+
+/* ---------- verdict ---------- */
+
+/** A lead of this many points or fewer is a close call. */
+export const CLOSE_MARGIN = 2;
+export type VerdictState = 'none' | 'decided' | 'unscored' | 'allBlocked' | 'onlyViable' | 'tie' | 'close' | 'clear';
+export type VerdictRow = { id: string; title: string; net: number; blocked: boolean; chosen: boolean; pct: number };
+export type Verdict = {
+  state: VerdictState;
+  leaderId: string | null; // drives the "Leading" badge and the green bar
+  topIds: string[]; // the two best scored viable options (for tie/close wording)
+  margin: number; // leader net − runner-up net
+  chosenId: string | null;
+  rows: VerdictRow[]; // ranked
+  showBars: boolean;
+};
+
+/** Which option of a decision is ahead, and how clearly. Shared by the card, inspector, compare and export. */
+export function verdictOf(options: Item[], statsOf: (id: string) => Stats): Verdict {
+  const net = (o: Item) => statsOf(o.id).net;
+  const viable = options.filter((o) => statsOf(o.id).mustMissing === 0);
+  const scored = viable.filter((o) => {
+    const s = statsOf(o.id);
+    return s.pro + s.con + s.risk > 0;
+  });
+  const byNet = (list: Item[]) => [...list].sort((a, b) => net(b) - net(a)); // Array.sort is stable
+
+  let state: VerdictState;
+  let leaderId: string | null = null;
+  let topIds: string[] = [];
+  let margin = 0;
+  if (options.length < 2) state = 'none';
+  else if (!viable.length) state = 'allBlocked';
+  else if (viable.length === 1) {
+    state = 'onlyViable';
+    leaderId = viable[0].id;
+  } else if (scored.length < 2) state = 'unscored';
+  else {
+    const ranked = byNet(scored);
+    topIds = [ranked[0].id, ranked[1].id];
+    margin = net(ranked[0]) - net(ranked[1]);
+    if (margin === 0) state = 'tie';
+    else {
+      state = margin <= CLOSE_MARGIN ? 'close' : 'clear';
+      leaderId = ranked[0].id;
+    }
+  }
+  const chosen = options.find((o) => o.chosen);
+  if (chosen) state = 'decided';
+
+  const nets = viable.map(net);
+  const lo = Math.min(0, ...nets);
+  const hi = Math.max(...nets);
+  const row = (o: Item, blocked: boolean): VerdictRow => ({
+    id: o.id,
+    title: o.title,
+    net: net(o),
+    blocked,
+    chosen: o.chosen,
+    pct: blocked ? 0 : hi === lo ? 100 : 14 + (86 * (net(o) - lo)) / (hi - lo),
+  });
+  const rows = [
+    ...byNet(viable).map((o) => row(o, false)),
+    ...options.filter((o) => !viable.includes(o)).map((o) => row(o, true)),
+  ];
+  const showBars = options.length >= 2 && (scored.length >= 1 || viable.length < options.length);
+  return { state, leaderId, topIds, margin, chosenId: chosen?.id ?? null, rows, showBars };
 }
 
 /* ---------- layout (left → right tidy tree) ---------- */
@@ -222,7 +311,7 @@ export function sampleItems(): Item[] {
   });
 
   const pg = add(root, 'option', 'PostgreSQL');
-  add(pg, 'requirement', 'Team already knows SQL', { met: true });
+  add(pg, 'requirement', 'Team already knows SQL', { met: true, must: true });
   add(pg, 'requirement', 'Managed hosting on RDS', { met: true });
   add(pg, 'pro', 'Strong consistency and real transactions', { weight: 5 });
   add(pg, 'pro', 'Mature ecosystem and tooling', { weight: 4 });
@@ -238,7 +327,7 @@ export function sampleItems(): Item[] {
   add(mongo, 'risk', 'Inconsistent data creeping in', { weight: 3 });
 
   const dyn = add(root, 'option', 'DynamoDB');
-  add(dyn, 'requirement', 'Access patterns known up front', { met: false });
+  add(dyn, 'requirement', 'Access patterns known up front', { met: false, must: true });
   add(dyn, 'pro', 'Zero ops, scales effortlessly', { weight: 5 });
   add(dyn, 'con', 'Vendor lock-in to AWS', { weight: 4 });
   add(dyn, 'con', 'Ad-hoc reporting queries are hard', { weight: 4 });

@@ -1,6 +1,6 @@
 import { getViewportForBounds, type Rect } from '@xyflow/react';
 import { toPng } from 'html-to-image';
-import { KINDS, groupChildren, optionStats, type Item, type Kind } from './model';
+import { KINDS, groupChildren, optionStats, verdictOf, type Item, type Kind } from './model';
 
 const fmtDate = (ts: number) =>
   new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
@@ -36,7 +36,7 @@ export function toMarkdown(items: Item[]): string {
     const pad = '  '.repeat(depth);
     const title = it.title || `Untitled ${KINDS[it.kind].label.toLowerCase()}`;
     let text: string;
-    if (it.kind === 'requirement') text = `[${it.met ? 'x' : ' '}] ${title}`;
+    if (it.kind === 'requirement') text = `[${it.met ? 'x' : ' '}] ${title}${it.must ? ' _(must-have)_' : ''}`;
     else if (it.kind === 'action') text = `[${it.done ? 'x' : ' '}] ${title}`;
     else if (it.kind === 'pro' || it.kind === 'con' || it.kind === 'risk') text = `${title} _(impact ${it.weight}/5)_`;
     else text = title;
@@ -59,6 +59,21 @@ export function toMarkdown(items: Item[]): string {
         line(quote(`**Why:** ${p.rationale}`));
         line();
       }
+    } else {
+      const v = verdictOf(options, (id) => optionStats(kids.get(id) ?? []));
+      const name = (id: string | null) => options.find((o) => o.id === id)?.title || 'Untitled option';
+      const summary =
+        v.state === 'clear' || v.state === 'close'
+          ? `**Leading:** ${name(v.leaderId)} (by ${v.margin} point${v.margin === 1 ? '' : 's'})`
+          : v.state === 'tie'
+            ? `**Tied:** ${name(v.topIds[0])} and ${name(v.topIds[1])}`
+            : v.state === 'onlyViable'
+              ? `**Only option meeting every must-have:** ${name(v.leaderId)}`
+              : null;
+      if (summary) {
+        line(summary);
+        line();
+      }
     }
     if (p.notes) {
       line(p.notes);
@@ -69,7 +84,9 @@ export function toMarkdown(items: Item[]): string {
 
     for (const o of options) {
       const s = optionStats(kids.get(o.id) ?? []);
-      const badges = [o.chosen && '✅ Chosen', `net ${s.net > 0 ? '+' : ''}${s.net}`].filter(Boolean).join(' · ');
+      const badges = [o.chosen && '✅ Chosen', s.mustMissing > 0 && '⛔ Blocked', `net ${s.net > 0 ? '+' : ''}${s.net}`]
+        .filter(Boolean)
+        .join(' · ');
       line(`${'#'.repeat(Math.min(level + 1, 6))} ${o.title || 'Untitled option'} (${badges})`);
       line();
       if (o.notes) {
