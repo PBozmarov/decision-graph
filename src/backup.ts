@@ -35,6 +35,7 @@ function readItem(v: unknown): Item | null {
   if (bool('must') !== undefined) it.must = bool('must');
   if (str('rationale') !== undefined) it.rationale = str('rationale');
   if (typeof v.decidedAt === 'number') it.decidedAt = v.decidedAt;
+  if (v.gut === -1 || v.gut === 0 || v.gut === 1) it.gut = v.gut;
   return it;
 }
 

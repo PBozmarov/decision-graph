@@ -31,7 +31,7 @@ const jobOffer = () =>
     add(accept, 'risk', 'Team culture is an unknown', { weight: 3 });
     add(accept, 'action', 'Talk to someone already on the team');
 
-    const stay = add(root, 'option', 'Stay where I am');
+    const stay = add(root, 'option', 'Stay where I am', { gut: 1 });
     add(stay, 'pro', 'I know the team and the codebase', { weight: 3 });
     add(stay, 'pro', 'Promotion likely next cycle', { weight: 3 });
     add(stay, 'con', 'Growth has slowed down', { weight: 3 });

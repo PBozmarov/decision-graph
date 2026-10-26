@@ -74,6 +74,16 @@ export function toMarkdown(items: Item[]): string {
         line(summary);
         line();
       }
+      const gut =
+        v.gutNote?.kind === 'disagree'
+          ? `**Gut check:** numbers favor ${name(v.leaderId)}, gut favors ${name(v.gutNote.favoriteId)}`
+          : v.gutNote?.kind === 'feelsOff'
+            ? `**Gut check:** ${name(v.leaderId)} leads, but it feels off`
+            : null;
+      if (gut) {
+        line(gut);
+        line();
+      }
     }
     if (p.notes) {
       line(p.notes);
@@ -84,7 +94,8 @@ export function toMarkdown(items: Item[]): string {
 
     for (const o of options) {
       const s = optionStats(kids.get(o.id) ?? []);
-      const badges = [o.chosen && '✅ Chosen', s.mustMissing > 0 && '⛔ Blocked', `net ${s.net > 0 ? '+' : ''}${s.net}`]
+      const feel = o.gut === 1 ? '🙂 feels good' : o.gut === 0 ? '😐 neutral' : o.gut === -1 ? '😟 feels uneasy' : null;
+      const badges = [o.chosen && '✅ Chosen', s.mustMissing > 0 && '⛔ Blocked', `net ${s.net > 0 ? '+' : ''}${s.net}`, feel]
         .filter(Boolean)
         .join(' · ');
       line(`${'#'.repeat(Math.min(level + 1, 6))} ${o.title || 'Untitled option'} (${badges})`);

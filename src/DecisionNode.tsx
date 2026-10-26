@@ -1,9 +1,9 @@
 import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { KINDS, isBlocked, isWeighted, type Item, type Stats, type Verdict } from './model';
+import { GUT_KEY, KINDS, isBlocked, isWeighted, type Item, type Stats, type Verdict } from './model';
 import { pillText, showsVerdict } from './compact';
 import { useActions } from './actions';
-import { IconCheck, IconChevron, IconPlus, KindIcon } from './icons';
+import { GutIcon, IconCheck, IconChevron, IconPlus, KindIcon } from './icons';
 import { VerdictHeadline } from './Verdict';
 
 export type DNodeData = {
@@ -39,6 +39,8 @@ export type DNodeData = {
   menuIndex: number;
 };
 export type DNode = Node<DNodeData, 'decision'>;
+
+const GUT_TITLE = { [-1]: 'Feels uneasy', 0: 'Feels neutral', 1: 'Feels good' } as const;
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
 
@@ -129,7 +131,14 @@ function VerdictBlock({ v }: { v: Verdict }) {
                 r.blocked ? 'is-blocked' : r.chosen ? 'is-chosen' : v.state !== 'decided' && r.id === v.leaderId && 'is-lead',
               )}
             >
-              <span className="vd-name">{r.title || 'Untitled option'}</span>
+              <span className="vd-name">
+                {r.gut !== undefined && (
+                  <span className={`gut-ic gut-${GUT_KEY[r.gut]}`} title={GUT_TITLE[r.gut]}>
+                    <GutIcon gut={r.gut} size={11} />
+                  </span>
+                )}
+                <span className="vd-name-tx">{r.title || 'Untitled option'}</span>
+              </span>
               <span className="vd-track">
                 <span className="vd-bar" style={{ width: `${r.pct}%` }} />
               </span>
@@ -278,6 +287,11 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
         )}
         {blocked && !item.chosen && <span className="badge badge-blocked">Blocked</span>}
         {leading && !item.chosen && !blocked && <span className="badge badge-lead">Leading</span>}
+        {item.kind === 'option' && item.gut !== undefined && (
+          <span className={`gut-ic dn-gut gut-${GUT_KEY[item.gut]}`} title={GUT_TITLE[item.gut]}>
+            <GutIcon gut={item.gut} size={14} />
+          </span>
+        )}
         <span className="dn-spacer" />
 
         {isWeighted(item.kind) && (

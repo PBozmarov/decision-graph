@@ -230,3 +230,33 @@ export const IconUpload = ({ size }: { size?: number }) => (
     <path d="M4.5 15v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
   </Svg>
 );
+export const IconSearch = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <circle cx="10.5" cy="10.5" r="6.5" />
+    <path d="m20 20-4.8-4.8" />
+  </Svg>
+);
+export const IconFaceUneasy = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9 9.5h.01M15 9.5h.01" />
+    <path d="M8.5 16.2a4.5 4.5 0 0 1 7 0" />
+  </Svg>
+);
+export const IconFaceNeutral = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9 9.5h.01M15 9.5h.01" />
+    <path d="M8.8 15h6.4" />
+  </Svg>
+);
+export const IconFaceGood = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9 9.5h.01M15 9.5h.01" />
+    <path d="M8.5 14a4.5 4.5 0 0 0 7 0" />
+  </Svg>
+);
+/** The face for a gut feeling (colored by the caller's `.gut-*` class). */
+export const GutIcon = ({ gut, size }: { gut: -1 | 0 | 1; size?: number }) =>
+  gut === 1 ? <IconFaceGood size={size} /> : gut === -1 ? <IconFaceUneasy size={size} /> : <IconFaceNeutral size={size} />;

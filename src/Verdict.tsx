@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Verdict } from './model';
-import { IconCheck } from './icons';
+import { IconCheck, IconFaceGood, IconFaceUneasy } from './icons';
 
 /** One-line summary of which option is ahead; shared by the decision card, compare sheet and inspector. */
 export function VerdictHeadline({ v, className = '' }: { v: Verdict; className?: string }) {
@@ -52,5 +52,38 @@ export function VerdictHeadline({ v, className = '' }: { v: Verdict; className?:
       body = 'Weigh pros, cons and risks to see a leader';
       break;
   }
-  return <div className={`vd-text vd-${v.state} ${v.state === 'allBlocked' ? 't-con' : ''} ${className}`}>{body}</div>;
+  // The gut disagrees with (or doubts) the numbers' leader: say so instead of the usual leader line.
+  // The gut part comes first: when the line is cut short, the leader is still visible in the bars.
+  const gut = v.state === 'clear' || v.state === 'close' || v.state === 'onlyViable' ? v.gutNote : null;
+  if (gut?.kind === 'disagree') {
+    body = (
+      <>
+        <span className="gut-ic gut-good">
+          <IconFaceGood size={11} />
+        </span>{' '}
+        Gut favors <b>{name(gut.favoriteId)}</b> · numbers favor <b className="vd-lead">{name(v.leaderId)}</b>
+      </>
+    );
+  } else if (gut?.kind === 'feelsOff') {
+    body = (
+      <>
+        <span className="gut-ic gut-uneasy">
+          <IconFaceUneasy size={11} />
+        </span>{' '}
+        <b className="vd-lead">{name(v.leaderId)}</b> leads, but it feels off
+      </>
+    );
+  }
+  // The gut line often runs past the card's one line; the full sentence is a hover away.
+  const full =
+    gut?.kind === 'disagree'
+      ? `Gut favors ${name(gut.favoriteId)} · numbers favor ${name(v.leaderId)}`
+      : gut?.kind === 'feelsOff'
+        ? `${name(v.leaderId)} leads, but it feels off`
+        : undefined;
+  return (
+    <div className={`vd-text vd-${v.state} ${v.state === 'allBlocked' ? 't-con' : ''} ${className}`} title={full}>
+      {body}
+    </div>
+  );
 }

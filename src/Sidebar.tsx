@@ -1,7 +1,8 @@
 import type { Doc, SyncStatus } from './store';
 import type { Account } from './cloud';
 import { useRef } from 'react';
-import { IconCheck, IconDownload, IconPlus, IconSparkle, IconTrash, IconUpload } from './icons';
+import { IconCheck, IconDownload, IconPlus, IconSearch, IconSparkle, IconTrash, IconUpload } from './icons';
+import { ago, summary } from './summary';
 
 const SYNC_LABEL: Record<SyncStatus, string> = {
   local: 'On this device',
@@ -21,34 +22,12 @@ const GoogleMark = () => (
   </svg>
 );
 
-function ago(ts: number) {
-  const s = Math.round((Date.now() - ts) / 1000);
-  if (s < 60) return 'Just now';
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.round(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function summary(doc: Doc) {
-  const root = doc.items.find((i) => i.parentId === null && i.kind === 'problem');
-  const options = root ? doc.items.filter((i) => i.parentId === root.id && i.kind === 'option') : [];
-  const chosen = options.find((o) => o.chosen);
-  return {
-    title: root?.title || (doc.items.length ? 'Untitled decision' : 'New decision'),
-    chosen: chosen ? chosen.title || 'Untitled option' : null,
-    options: options.length,
-  };
-}
-
 export function Sidebar({
   docs,
   activeId,
   onSelect,
   onNew,
+  onSearch,
   onDelete,
   onTemplate,
   onBackup,
@@ -62,6 +41,8 @@ export function Sidebar({
   activeId: string;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** Opens the ⌘K palette. */
+  onSearch: () => void;
   onDelete: (id: string) => void;
   onTemplate: () => void;
   onBackup: () => void;
@@ -73,7 +54,49 @@ export function Sidebar({
   onSignOut: () => void;
 }) {
   const sorted = [...docs].sort((a, b) => b.updatedAt - a.updatedAt);
+  // Once something is decided, split the list; each part keeps the last-edited-first order.
+  const decided = sorted.filter((d) => summary(d).chosen !== null);
+  const open = sorted.filter((d) => summary(d).chosen === null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const row = (d: Doc) => {
+    const s = summary(d);
+    return (
+      <div
+        key={d.id}
+        role="button"
+        tabIndex={0}
+        className={`side-row ${d.id === activeId ? 'is-active' : ''}`}
+        onClick={() => onSelect(d.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSelect(d.id);
+        }}
+      >
+        <div className="side-title">{s.title}</div>
+        <div className="side-meta">
+          {s.chosen ? (
+            <span className="side-chosen">
+              <IconCheck size={11} /> {s.chosen}
+            </span>
+          ) : (
+            <span>{s.options ? `${s.options} option${s.options === 1 ? '' : 's'}` : 'No options yet'}</span>
+          )}
+          <span className="side-dot" />
+          <span>{ago(d.updatedAt)}</span>
+        </div>
+        <button
+          className="side-del"
+          title="Delete decision"
+          aria-label="Delete decision"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!d.items.length || confirm(`Delete “${s.title}”? You can't undo this.`)) onDelete(d.id);
+          }}
+        >
+          <IconTrash size={13} />
+        </button>
+      </div>
+    );
+  };
   return (
     <aside className="sidebar glass">
       <header className="side-head">
@@ -83,46 +106,23 @@ export function Sidebar({
         </button>
       </header>
 
+      <button className="side-search" onClick={onSearch}>
+        <IconSearch size={14} />
+        <span>Search</span>
+        <span className="kbd-hint side-search-kbd">⌘K</span>
+      </button>
+
       <div className="side-list">
-        {sorted.map((d) => {
-          const s = summary(d);
-          return (
-            <div
-              key={d.id}
-              role="button"
-              tabIndex={0}
-              className={`side-row ${d.id === activeId ? 'is-active' : ''}`}
-              onClick={() => onSelect(d.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onSelect(d.id);
-              }}
-            >
-              <div className="side-title">{s.title}</div>
-              <div className="side-meta">
-                {s.chosen ? (
-                  <span className="side-chosen">
-                    <IconCheck size={11} /> {s.chosen}
-                  </span>
-                ) : (
-                  <span>{s.options ? `${s.options} option${s.options === 1 ? '' : 's'}` : 'No options yet'}</span>
-                )}
-                <span className="side-dot" />
-                <span>{ago(d.updatedAt)}</span>
-              </div>
-              <button
-                className="side-del"
-                title="Delete decision"
-                aria-label="Delete decision"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!d.items.length || confirm(`Delete “${s.title}”? You can't undo this.`)) onDelete(d.id);
-                }}
-              >
-                <IconTrash size={13} />
-              </button>
-            </div>
-          );
-        })}
+        {decided.length ? (
+          <>
+            {open.length > 0 && <div className="side-sec">Open · {open.length}</div>}
+            {open.map(row)}
+            <div className="side-sec">Decided · {decided.length}</div>
+            {decided.map(row)}
+          </>
+        ) : (
+          sorted.map(row)
+        )}
       </div>
 
       <footer className="side-foot">

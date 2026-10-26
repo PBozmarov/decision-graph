@@ -17,6 +17,7 @@ import { Sidebar } from './Sidebar';
 import { Compare } from './Compare';
 import { Guide, type GuideState } from './Guide';
 import { WhyPrompt } from './WhyPrompt';
+import { Palette, type PaletteResult } from './Palette';
 import { docTitle, downloadBlob, graphToPng, slug, toMarkdown } from './export';
 import { parseBackup, toBackup } from './backup';
 import { ActionsContext, type Actions } from './actions';
@@ -206,7 +207,7 @@ const Kbd = ({ children }: { children: string }) => (
 function Canvas() {
   const auth = useAuth();
   const doc = useDoc(auth.account?.uid ?? null);
-  const { items, add, update, remove, move, reparent, duplicate, choose, undo, redo } = doc;
+  const { items, add, update, remove, move, reparent, duplicate, expandTo, choose, undo, redo } = doc;
   const { theme, toggle } = useTheme();
   const [view, setView] = usePref<'compact' | 'expanded'>('dg-view', 'compact');
   const [sidebar, setSidebar] = usePref<'open' | 'closed'>(
@@ -236,6 +237,9 @@ function Canvas() {
   // The moment of choice: which option just got chosen (`n` replays repeats), and the "Why?" prompt.
   const [celebrate, setCelebrate] = useState<{ id: string; n: number; bump: boolean } | null>(null);
   const [whyId, setWhyId] = useState<string | null>(null);
+  // ⌘K palette, and the card it should jump to once that card's decision is open.
+  const [palette, setPalette] = useState(false);
+  const [jumpTo, setJumpTo] = useState<string | null>(null);
   // Deleted cards linger briefly as non-interactive ghosts so they can fade out.
   const [ghosts, setGhosts] = useState<{ key: number; nodes: DNode[]; edges: Edge[] }[]>([]);
   const ghostKey = useRef(0);
@@ -1048,6 +1052,50 @@ function Canvas() {
     [byId, handleAdd],
   );
 
+  /* ---------- ⌘K palette ---------- */
+
+  const togglePalette = useCallback(() => {
+    setMenu(null);
+    setEditing(null);
+    setPalette((o) => !o);
+  }, []);
+
+  const pickResult = (r: PaletteResult) => {
+    setPalette(false);
+    setCompareId(null);
+    setGuide(null);
+    setWhyId(null);
+    setFocusId(null);
+    setMenu(null);
+    setEditing(null);
+    const other = r.docId !== doc.activeId;
+    if (other) doc.switchDoc(r.docId);
+    closeSideOnMobile();
+    if (!r.itemId) {
+      resetView();
+      fit();
+      return;
+    }
+    if (other) resetView();
+    setJumpTo(r.itemId);
+  };
+
+  // Once the card's decision is open: expand its collapsed ancestors (one undo step), select it, pan to it.
+  useEffect(() => {
+    if (!jumpTo) return;
+    const t = setTimeout(() => {
+      setJumpTo(null);
+      if (!byId.has(jumpTo)) return;
+      expandTo(jumpTo);
+      select(jumpTo);
+      // Pills (and what hangs off them) show through their option card.
+      let r: string | null = jumpTo;
+      while (r && hidden.has(r)) r = byId.get(r)?.parentId ?? null;
+      setRevealId(r);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [jumpTo, byId, hidden, expandTo, select]);
+
   useEffect(() => {
     const go = (id: string | undefined) => {
       if (!id) return;
@@ -1057,6 +1105,13 @@ function Canvas() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       const mod = e.metaKey || e.ctrlKey;
+      // ⌘K works everywhere, inputs included; while the palette is open nothing else does.
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        togglePalette();
+        return;
+      }
+      if (palette) return;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -1177,7 +1232,7 @@ function Canvas() {
   }, [
     selectedId, byId, kids, nodeIds, menu, focusId, select, undo, redo, deleteItem,
     handleAdd, startEdit, toggleFocus, navChildren, navSiblings, pickMenu, compareId, optionsOf, guide,
-    duplicateItem,
+    duplicateItem, palette, togglePalette,
   ]);
 
   const selected = selectedId ? byId.get(selectedId) : undefined;
@@ -1265,6 +1320,7 @@ function Canvas() {
               doc.newDoc();
               resetView();
             }}
+            onSearch={togglePalette}
             onDelete={(id) => {
               const wasActive = id === doc.activeId;
               doc.deleteDoc(id);
@@ -1556,6 +1612,10 @@ function Canvas() {
           >
             <PillFace p={byId.get(pillDrag.id)!} />
           </div>
+        )}
+
+        {palette && (
+          <Palette docs={doc.docs} activeId={doc.activeId} onPick={pickResult} onClose={() => setPalette(false)} />
         )}
 
         {toast && (

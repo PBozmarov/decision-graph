@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { groupChildren, isBlocked, optionStats, verdictOf, type Item, type Kind, type Stats } from './model';
-import { IconCheck, IconClose, KindIcon } from './icons';
+import { GUT_KEY, groupChildren, isBlocked, optionStats, verdictOf, type Item, type Kind, type Stats } from './model';
+import { GutIcon, IconCheck, IconClose, KindIcon } from './icons';
 import { VerdictHeadline } from './Verdict';
 
 const ROWS: { kind: Kind; title: string }[] = [
@@ -10,6 +10,8 @@ const ROWS: { kind: Kind; title: string }[] = [
   { kind: 'risk', title: 'Risks' },
   { kind: 'action', title: 'Actions' },
 ];
+
+const GUT_LABEL = { [-1]: 'Feels uneasy', 0: 'Neutral', 1: 'Feels good' } as const;
 
 const k = (kind: string) => ({ '--k': `var(--${kind})` }) as CSSProperties;
 
@@ -61,7 +63,8 @@ export function Compare({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // The search palette may sit on top; its own Escape comes first.
+      if (e.key === 'Escape' && !document.querySelector('.pal-backdrop')) {
         e.stopPropagation();
         onClose();
       }
@@ -135,6 +138,12 @@ export function Compare({
                       </span>
                     )}
                     {isBlocked(s) && <span className="badge badge-blocked">Blocked</span>}
+                    {o.gut !== undefined && (
+                      <span className={`cmp-gut gut-ic gut-${GUT_KEY[o.gut]}`}>
+                        <GutIcon gut={o.gut} size={13} />
+                        {GUT_LABEL[o.gut]}
+                      </span>
+                    )}
                   </div>
                   <div className="balance">
                     <span className="seg seg-pro" style={{ width: pct(s.pro) }} />

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { KINDS, isWeighted, type Item, type Stats, type Verdict } from './model';
+import { GUT_KEY, KINDS, isWeighted, type Item, type Stats, type Verdict } from './model';
 import { Dots } from './DecisionNode';
 import { VerdictHeadline } from './Verdict';
 import {
@@ -13,6 +13,7 @@ import {
   IconCopy,
   IconFocus,
   IconTrash,
+  GutIcon,
   KindIcon,
 } from './icons';
 
@@ -54,6 +55,32 @@ function AutoText({
   );
 }
 
+const GUTS = [
+  { v: -1, label: 'Uneasy' },
+  { v: 0, label: 'Neutral' },
+  { v: 1, label: 'Good' },
+] as const;
+
+/** Three-way gut feeling for an option; clicking the selected one clears it. Also used by the guide. */
+export function GutControl({ value, onChange }: { value: Item['gut']; onChange: (v: Item['gut']) => void }) {
+  return (
+    <div className="seg-ctl gut-ctl" role="radiogroup" aria-label="Gut feeling">
+      {GUTS.map((g) => (
+        <button
+          key={g.v}
+          role="radio"
+          aria-checked={value === g.v}
+          className={`gut-seg gut-${GUT_KEY[g.v]} ${value === g.v ? 'is-on' : ''}`}
+          onClick={() => onChange(value === g.v ? undefined : g.v)}
+        >
+          <GutIcon gut={g.v} size={15} />
+          {g.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** "Move to…": a menu of the cards that can take this one. Rendered in a portal so the scrolling panel can't clip it. */
 function MoveTo({ targets, onMove }: { targets: Item[]; onMove: (targetId: string) => void }) {
   const btn = useRef<HTMLButtonElement>(null);
@@ -61,7 +88,8 @@ function MoveTo({ targets, onMove }: { targets: Item[]; onMove: (targetId: strin
   useEffect(() => {
     if (!pos) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      // The search palette may sit on top; its own Escape comes first.
+      if (e.key !== 'Escape' || document.querySelector('.pal-backdrop')) return;
       e.stopPropagation();
       setPos(null);
     };
@@ -301,6 +329,13 @@ export function Inspector({
               {blockers.length > 1 && ` and ${blockers.length - 1} more`}
             </div>
           )}
+          <div className="gut-row">
+            <div>
+              <div className="gut-title">Gut feeling</div>
+              <div className="gut-sub">How does this path feel?</div>
+            </div>
+            <GutControl value={item.gut} onChange={(gut) => onUpdate({ gut })} />
+          </div>
           <div className="net">
             Net score
             <b className={stats.net > 0 ? 't-pro' : stats.net < 0 ? 't-con' : ''}>

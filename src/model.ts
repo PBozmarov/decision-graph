@@ -11,6 +11,7 @@ export type Item = {
   must?: boolean; // used by requirement: an option missing a must-have is ruled out
   done?: boolean; // used by action
   chosen: boolean; // used by option
+  gut?: -1 | 0 | 1; // options: how the path feels (uneasy, neutral, good); undefined = not asked yet
   rationale?: string; // used by problem: why the chosen path won
   decidedAt?: number; // used by problem: when a path was chosen
   collapsed: boolean;
@@ -131,7 +132,7 @@ export const isBlocked = (s: Stats | null | undefined) => !!s && s.mustMissing >
 /** A lead of this many points or fewer is a close call. */
 export const CLOSE_MARGIN = 2;
 export type VerdictState = 'none' | 'decided' | 'unscored' | 'allBlocked' | 'onlyViable' | 'tie' | 'close' | 'clear';
-export type VerdictRow = { id: string; title: string; net: number; blocked: boolean; chosen: boolean; pct: number };
+export type VerdictRow = { id: string; title: string; net: number; blocked: boolean; chosen: boolean; pct: number; gut?: -1 | 0 | 1 };
 export type Verdict = {
   state: VerdictState;
   leaderId: string | null; // drives the "Leading" badge and the green bar
@@ -140,7 +141,12 @@ export type Verdict = {
   chosenId: string | null;
   rows: VerdictRow[]; // ranked
   showBars: boolean;
+  /** The gut's view next to the numbers' leader (never changes the leader, the order or the bars). */
+  gutNote: { kind: 'feelsOff' } | { kind: 'disagree'; favoriteId: string } | null;
 };
+
+/** Class-name suffix per gut feeling. */
+export const GUT_KEY = { [-1]: 'uneasy', 0: 'neutral', 1: 'good' } as const;
 
 /** Which option of a decision is ahead, and how clearly. Shared by the card, inspector, compare and export. */
 export function verdictOf(options: Item[], statsOf: (id: string) => Stats): Verdict {
@@ -175,6 +181,14 @@ export function verdictOf(options: Item[], statsOf: (id: string) => Stats): Verd
   const chosen = options.find((o) => o.chosen);
   if (chosen) state = 'decided';
 
+  let gutNote: Verdict['gutNote'] = null;
+  const leader = state !== 'decided' && leaderId ? options.find((o) => o.id === leaderId) : undefined;
+  if (leader?.gut === -1) gutNote = { kind: 'feelsOff' };
+  else if (leader && leader.gut !== 1) {
+    const favorites = viable.filter((o) => o.id !== leader.id && o.gut === 1);
+    if (favorites.length === 1) gutNote = { kind: 'disagree', favoriteId: favorites[0].id };
+  }
+
   const nets = viable.map(net);
   const lo = Math.min(0, ...nets);
   const hi = Math.max(...nets);
@@ -185,13 +199,14 @@ export function verdictOf(options: Item[], statsOf: (id: string) => Stats): Verd
     blocked,
     chosen: o.chosen,
     pct: blocked ? 0 : hi === lo ? 100 : 14 + (86 * (net(o) - lo)) / (hi - lo),
+    gut: o.gut,
   });
   const rows = [
     ...byNet(viable).map((o) => row(o, false)),
     ...options.filter((o) => !viable.includes(o)).map((o) => row(o, true)),
   ];
   const showBars = options.length >= 2 && (scored.length >= 1 || viable.length < options.length);
-  return { state, leaderId, topIds, margin, chosenId: chosen?.id ?? null, rows, showBars };
+  return { state, leaderId, topIds, margin, chosenId: chosen?.id ?? null, rows, showBars, gutNote };
 }
 
 /* ---------- layout (left → right tidy tree) ---------- */

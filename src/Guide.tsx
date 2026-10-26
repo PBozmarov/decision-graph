@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, type CSSProperties, t
 import { optionStats, type Item, type Kind } from './model';
 import { Dots } from './DecisionNode';
 import { IconClose, KindIcon } from './icons';
+import { GutControl } from './Inspector';
 
 export type GuideState = { problemId: string; step: 'options' | 'weigh'; index: number };
 
@@ -253,6 +254,10 @@ export function Guide({
             weighted
             store={store}
           />
+        </section>
+        <section className="guide-section">
+          <div className="insp-label">How does it feel?</div>
+          <GutControl value={option.gut} onChange={(gut) => store.update(option.id, { gut })} />
         </section>
         <div className="guide-result">
           <div className="balance">

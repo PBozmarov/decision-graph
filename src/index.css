@@ -1512,9 +1512,17 @@ button.brand.is-on .brand-side {
   font-size: 11.5px;
 }
 .vd-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   color: var(--text-2);
   font-weight: 560;
   white-space: nowrap;
+  overflow: hidden;
+}
+.vd-name-tx {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2785,4 +2793,278 @@ body.is-pill-drag * {
 }
 .react-flow__node.is-following.has-target .dn {
   opacity: 0.45;
+}
+
+/* ---------- ⌘K palette ---------- */
+.pal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 14vh 16px 16px;
+}
+/* Tint, blur and fade live on a pseudo-element: a backdrop-filter or opacity on the parent would stop the panel's own glass from blurring the canvas. */
+.pal-backdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.16);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: fade 180ms ease both;
+}
+:root[data-theme='dark'] .pal-backdrop::before {
+  background: rgba(0, 0, 0, 0.32);
+}
+.pal {
+  position: relative;
+  width: min(620px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  overflow: hidden;
+  animation: pal-in 280ms var(--spring) both;
+}
+@keyframes pal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+.pal-input {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 56px;
+  padding: 0 14px 0 17px;
+  color: var(--text-3);
+}
+.pal-input svg {
+  flex: none;
+}
+.pal-input input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 450;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+.pal-input input::placeholder {
+  color: var(--text-3);
+}
+.pal-esc {
+  flex: none;
+  font-weight: 550;
+}
+.pal-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 0 6px 6px;
+  border-top: 0.5px solid var(--glass-border);
+  scroll-padding: 6px 0;
+}
+.pal-group-title {
+  padding: 10px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.pal-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 50px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.pal-row.is-active {
+  background: var(--fill);
+}
+.pal-row .dn-chip {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+.pal-text {
+  flex: 1;
+  min-width: 0;
+}
+.pal-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pal-hl {
+  font-weight: 650;
+  color: var(--text);
+}
+.pal-row .side-meta {
+  margin-top: 2px;
+}
+.pal-tag {
+  flex: none;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--option);
+  background: color-mix(in srgb, var(--option) 12%, transparent);
+}
+.pal-empty {
+  padding: 26px 16px 22px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-3);
+}
+@media (pointer: coarse) {
+  .pal-esc {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .pal-backdrop {
+    padding: 8px;
+  }
+  .pal-input input {
+    font-size: 17px;
+  }
+}
+
+/* ---------- sidebar: search, open / decided ---------- */
+.side-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  margin: 0 2px 8px;
+  padding: 0 7px 0 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--text-3);
+  background: var(--fill);
+  transition: background 140ms ease;
+}
+.side-search:hover {
+  background: var(--fill-2);
+}
+.side-search-kbd {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 1px 5px;
+}
+@media (pointer: coarse) {
+  .side-search-kbd {
+    display: none;
+  }
+}
+.side-sec {
+  flex: none;
+  padding: 4px 10px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.side-row + .side-sec {
+  margin-top: 8px;
+}
+
+/* ---------- gut check ---------- */
+.gut-ic {
+  display: inline-flex;
+  flex: none;
+}
+.vd-text .gut-ic {
+  display: inline;
+}
+.gut-ic.gut-good {
+  color: var(--pro);
+}
+.gut-ic.gut-neutral {
+  color: var(--text-3);
+}
+.gut-ic.gut-uneasy {
+  color: var(--con);
+}
+.gut-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gut-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.gut-sub {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.gut-seg {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--text-2);
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+.gut-seg:hover {
+  color: var(--text);
+}
+.gut-seg.is-on {
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+.gut-seg.is-on.gut-uneasy {
+  color: var(--con);
+}
+.gut-seg.is-on.gut-neutral {
+  color: var(--text-2);
+}
+.gut-seg.is-on.gut-good {
+  color: var(--pro);
+}
+.gut-seg:active {
+  transform: scale(0.97);
+}
+.cmp-net {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.cmp-gut {
+  align-self: center;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }

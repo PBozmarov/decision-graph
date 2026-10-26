@@ -474,6 +474,20 @@ export function useDoc(uid: string | null) {
     [commit],
   );
 
+  /** Expand every collapsed ancestor of `id` in one undo step; nothing is committed when none is collapsed. */
+  const expandTo = useCallback(
+    (id: string) => {
+      const items = currentItems(libRef.current);
+      const byId = new Map(items.map((i) => [i.id, i]));
+      const closed = new Set<string>();
+      for (let p = byId.get(id)?.parentId ?? null; p; p = byId.get(p)?.parentId ?? null)
+        if (byId.get(p)?.collapsed) closed.add(p);
+      if (!closed.size) return;
+      commit((prev) => prev.map((p) => (closed.has(p.id) ? { ...p, collapsed: false } : p)));
+    },
+    [commit],
+  );
+
   /** Fill the current decision (e.g. from a template); undoable. */
   const replaceItems = useCallback((next: Item[]) => commit(() => next), [commit]);
 
@@ -497,6 +511,7 @@ export function useDoc(uid: string | null) {
     move,
     reparent,
     duplicate,
+    expandTo,
     choose,
     undo,
     redo,
