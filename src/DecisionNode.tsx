@@ -20,6 +20,14 @@ export type DNodeData = {
   faded: boolean;
   /** Guided start: the option being weighed (a ring, without selecting it). */
   guided: boolean;
+  /** Just chosen: a ring expands from the card (for about a second). */
+  celebrate: boolean;
+  /** The first beat of that moment: the card swells slightly, then settles. */
+  bump: boolean;
+  /** A dragged card or pill would move here on drop. */
+  dropTarget: boolean;
+  /** Compact view: the pill currently being dragged out of this card. */
+  liftedPill: string | null;
   w: number;
   h: number;
   /** Compact view: children drawn as pills inside this card. */
@@ -176,20 +184,42 @@ function InlineTitle({ item, selectAll }: { item: Item; selectAll: boolean }) {
   );
 }
 
-function Pill({ p, selected }: { p: Item; selected: boolean }) {
-  const { select, startEdit } = useActions();
-  const ticked = (p.kind === 'requirement' && p.met) || (p.kind === 'action' && p.done);
+const isTicked = (p: Item) => (p.kind === 'requirement' && p.met) || (p.kind === 'action' && p.done);
+const pillClass = (p: Item) =>
+  cx(
+    'pill-item',
+    isTicked(p) && 'is-ticked',
+    p.kind === 'action' && p.done && 'is-done',
+    p.kind === 'requirement' && p.must && 'is-must',
+  );
+const pillStyle = (p: Item) => ({ '--k': `var(--${p.kind})` }) as CSSProperties;
+
+function PillContent({ p }: { p: Item }) {
+  return (
+    <>
+      <span className="pill-ic">{isTicked(p) ? <IconCheck size={10} /> : <KindIcon kind={p.kind} size={11} />}</span>
+      <span className={cx('pill-tx', !p.title && 'ph')}>{pillText(p)}</span>
+    </>
+  );
+}
+
+/** A non-interactive copy of a pill (the one that follows the pointer while dragging). */
+export function PillFace({ p }: { p: Item }) {
+  return (
+    <span className={pillClass(p)} style={pillStyle(p)}>
+      <PillContent p={p} />
+    </span>
+  );
+}
+
+function Pill({ p, selected, lifted }: { p: Item; selected: boolean; lifted: boolean }) {
+  const { select, startEdit, startPillDrag } = useActions();
   return (
     <button
-      className={cx(
-        'pill-item nodrag',
-        selected && 'is-sel',
-        ticked && 'is-ticked',
-        p.kind === 'action' && p.done && 'is-done',
-        p.kind === 'requirement' && p.must && 'is-must',
-      )}
-      style={{ '--k': `var(--${p.kind})` } as CSSProperties}
+      className={cx(pillClass(p), 'nodrag', selected && 'is-sel', lifted && 'is-lifted')}
+      style={pillStyle(p)}
       title={p.kind === 'requirement' && p.must ? `${pillText(p)} · must-have` : pillText(p)}
+      onPointerDown={(e) => startPillDrag(p.id, e)}
       onClick={(e) => {
         e.stopPropagation();
         select(p.id);
@@ -199,8 +229,7 @@ function Pill({ p, selected }: { p: Item; selected: boolean }) {
         startEdit(p.id);
       }}
     >
-      <span className="pill-ic">{ticked ? <IconCheck size={10} /> : <KindIcon kind={p.kind} size={11} />}</span>
-      <span className={cx('pill-tx', !p.title && 'ph')}>{pillText(p)}</span>
+      <PillContent p={p} />
     </button>
   );
 }
@@ -228,6 +257,9 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
         item.collapsed && childCount > 0 && 'is-collapsed',
         item.chosen && 'is-chosen',
         blocked && 'is-blocked',
+        data.celebrate && 'is-celebrating',
+        data.bump && 'is-bumped',
+        data.dropTarget && 'is-drop-target',
       )}
       style={style}
     >
@@ -302,7 +334,7 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
       {pills && pills.length > 0 && (
         <div className="pills">
           {pills.map((p) => (
-            <Pill key={p.id} p={p} selected={p.id === selectedPill} />
+            <Pill key={p.id} p={p} selected={p.id === selectedPill} lifted={p.id === data.liftedPill} />
           ))}
         </div>
       )}

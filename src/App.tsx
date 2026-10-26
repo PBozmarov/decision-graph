@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -11,11 +11,12 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { DecisionNode, type DNode } from './DecisionNode';
+import { DecisionNode, PillFace, type DNode } from './DecisionNode';
 import { Inspector } from './Inspector';
 import { Sidebar } from './Sidebar';
 import { Compare } from './Compare';
 import { Guide, type GuideState } from './Guide';
+import { WhyPrompt } from './WhyPrompt';
 import { docTitle, downloadBlob, graphToPng, slug, toMarkdown } from './export';
 import { parseBackup, toBackup } from './backup';
 import { ActionsContext, type Actions } from './actions';
@@ -24,6 +25,7 @@ import {
   PILL_KINDS,
   SIZE,
   applyMove,
+  canMoveTo,
   groupChildren,
   layout,
   optionStats,
@@ -204,7 +206,7 @@ const Kbd = ({ children }: { children: string }) => (
 function Canvas() {
   const auth = useAuth();
   const doc = useDoc(auth.account?.uid ?? null);
-  const { items, add, update, remove, move, choose, undo, redo } = doc;
+  const { items, add, update, remove, move, reparent, duplicate, choose, undo, redo } = doc;
   const { theme, toggle } = useTheme();
   const [view, setView] = usePref<'compact' | 'expanded'>('dg-view', 'compact');
   const [sidebar, setSidebar] = usePref<'open' | 'closed'>(
@@ -231,6 +233,12 @@ function Canvas() {
   const [guide, setGuide] = useState<GuideState | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // The moment of choice: which option just got chosen (`n` replays repeats), and the "Why?" prompt.
+  const [celebrate, setCelebrate] = useState<{ id: string; n: number; bump: boolean } | null>(null);
+  const [whyId, setWhyId] = useState<string | null>(null);
+  // Deleted cards linger briefly as non-interactive ghosts so they can fade out.
+  const [ghosts, setGhosts] = useState<{ key: number; nodes: DNode[]; edges: Edge[] }[]>([]);
+  const ghostKey = useRef(0);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2200);
@@ -245,7 +253,28 @@ function Canvas() {
   }, []);
 
   // Drag-to-reorder: while dragging, siblings make room live; the drop commits the move.
-  const [drag, setDrag] = useState<{ id: string; y: number; index: number } | null>(null);
+  // Over another card that can take it (`target`), the siblings stay put and the drop moves it there.
+  const [drag, setDrag] = useState<{
+    id: string;
+    x: number;
+    y: number;
+    index: number;
+    from: number;
+    target: string | null;
+  } | null>(null);
+  const dragCancelled = useRef(false);
+  // Compact view: a pill being dragged to another card (mouse only).
+  const [pillDrag, setPillDrag] = useState<{
+    id: string;
+    x: number;
+    y: number;
+    ox: number;
+    oy: number;
+    zoom: number;
+    target: string | null;
+  } | null>(null);
+  const dropId = drag?.target ?? pillDrag?.target ?? null;
+  const liftedId = pillDrag?.id ?? null;
   const shown = useMemo(
     () => (drag ? applyMove(items, drag.id, drag.index) : items),
     [items, drag?.id, drag?.index],
@@ -372,20 +401,23 @@ function Canvas() {
       const pills = compact && it.kind === 'option' ? pillsOf(it.id, kids) : null;
       const isDragged = drag?.id === it.id;
       const base = positions.get(it.id)!;
+      const dx = dragBase && drag && (isDragged || follow) ? drag.x - dragBase.x : 0;
       const dy = dragBase && drag && (isDragged || follow) ? drag.y - dragBase.y : 0;
       const { w, h } = sizeOf(it);
       const faded = !!focusSet && !focusSet.has(it.id);
       nodes.push({
         id: it.id,
         type: 'decision',
-        position: { x: base.x, y: base.y + dy },
+        position: { x: base.x + dx, y: base.y + dy },
         // Card sizes are known up front, so React Flow doesn't need to wait for a DOM measurement.
         width: w,
         height: h,
         measured: { width: w, height: h },
         selected: it.id === selectedId,
         zIndex: isDragged || follow ? 2000 : it.id === selectedId || menu?.id === it.id ? 1000 : 0,
-        className: isDragged ? 'is-dragged' : follow ? 'is-following' : undefined,
+        className: isDragged || follow
+          ? `${isDragged ? 'is-dragged' : 'is-following'}${dropId ? ' has-target' : ''}`
+          : undefined,
         data: {
           item: it,
           stats: stats.get(it.id) ?? null,
@@ -400,6 +432,10 @@ function Canvas() {
           dimmed,
           faded,
           guided: it.id === guidedId,
+          celebrate: celebrate?.id === it.id,
+          bump: celebrate?.id === it.id && celebrate.bump,
+          dropTarget: it.id === dropId,
+          liftedPill: pills?.some((p) => p.id === liftedId) ? liftedId : null,
           w,
           h,
           pills,
@@ -428,9 +464,19 @@ function Canvas() {
     };
     for (const r of kids.get(null) ?? []) walk(r, false, false);
     return { nodes, edges };
-  }, [kids, hidden, compact, pillsOf, positions, sizeOf, selectedId, stats, verdicts, leading, drag, editing, menu, focusSet, guidedId]);
+  }, [kids, hidden, compact, pillsOf, positions, sizeOf, selectedId, stats, verdicts, leading, drag, editing, menu, focusSet, guidedId, celebrate, dropId, liftedId]);
 
   const nodeIds = useMemo(() => new Set(nodes.map((n) => n.id)), [nodes]);
+
+  // React Flow also draws the fading ghosts; navigation, fit and reveal keep using the real nodes.
+  const { flowNodes, flowEdges } = useMemo(() => {
+    if (!ghosts.length) return { flowNodes: nodes, flowEdges: edges };
+    const flowNodes = [...nodes, ...ghosts.flatMap((g) => g.nodes)];
+    const ids = new Set(flowNodes.map((n) => n.id));
+    // A ghost edge whose source has since gone too would point at a missing node.
+    const ghostEdges = ghosts.flatMap((g) => g.edges).filter((e) => ids.has(e.source) && ids.has(e.target));
+    return { flowNodes, flowEdges: [...edges, ...ghostEdges] };
+  }, [nodes, edges, ghosts]);
 
   /* ---------- editing & adding ---------- */
 
@@ -469,6 +515,68 @@ function Canvas() {
     [add, byId, compact, hidden, setFreshId],
   );
 
+  /** Compact view: drag a pill onto another card with the mouse. A click without movement still selects it. */
+  const startPillDrag = useCallback(
+    (id: string, e: ReactPointerEvent<HTMLElement>) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      // No mousedown follows, so the canvas doesn't pan and no text gets selected; click still fires.
+      e.preventDefault();
+      const el = e.currentTarget;
+      const rect = el.getBoundingClientRect();
+      const sx = e.clientX;
+      const sy = e.clientY;
+      const zoom = rf.getZoom();
+      const ox = (sx - rect.left) / zoom;
+      const oy = (sy - rect.top) / zoom;
+      let active = false;
+      let target: string | null = null;
+      const hit = (x: number, y: number) => {
+        for (const node of document.elementsFromPoint(x, y)) {
+          const card = node.closest<HTMLElement>('.react-flow__node[data-id]');
+          const cardId = card?.dataset.id;
+          if (!cardId || cardId.startsWith('leaving:')) continue;
+          return canMoveTo(items, id, cardId) ? cardId : null;
+        }
+        return null;
+      };
+      const onMove = (ev: PointerEvent) => {
+        if (!active) {
+          if (Math.hypot(ev.clientX - sx, ev.clientY - sy) <= 4) return;
+          active = true;
+          document.body.classList.add('is-pill-drag');
+        }
+        target = hit(ev.clientX, ev.clientY);
+        setPillDrag({ id, x: ev.clientX, y: ev.clientY, ox, oy, zoom, target });
+      };
+      const end = (drop: boolean) => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('keydown', onKey, true);
+        if (!active) return;
+        document.body.classList.remove('is-pill-drag');
+        // The click that ends a drag shouldn't select anything.
+        const swallow = (ev: MouseEvent) => ev.stopPropagation();
+        window.addEventListener('click', swallow, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0);
+        setPillDrag(null);
+        if (drop && target) reparent(id, target);
+      };
+      const onUp = () => end(true);
+      const onCancel = () => end(false);
+      const onKey = (ev: KeyboardEvent) => {
+        if (ev.key !== 'Escape' || !active) return;
+        ev.stopPropagation();
+        end(false);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('keydown', onKey, true);
+    },
+    [rf, reparent, items],
+  );
+
   const actions = useMemo<Actions>(
     () => ({
       add: (parentId, kind) => handleAdd(parentId, kind),
@@ -493,32 +601,58 @@ function Canvas() {
         setEditing(null);
         if (key === 'Tab' && KINDS[byId.get(id)?.kind ?? 'note'].children.length) setMenu({ id, index: 0 });
       },
+      startPillDrag,
     }),
-    [handleAdd, update, select, startEdit, byId],
+    [handleAdd, update, select, startEdit, byId, startPillDrag],
   );
 
   /* ---------- drag to reorder ---------- */
 
-  const latest = useRef({ items, positions, restPositions, sizeOf });
-  latest.current = { items, positions, restPositions, sizeOf };
+  const latest = useRef({ items, positions, restPositions, sizeOf, edges });
+  latest.current = { items, positions, restPositions, sizeOf, edges };
 
   const siblingsOf = (list: Item[], it: Item) =>
     list.filter((i) => i.parentId === it.parentId && i.kind === it.kind);
 
-  const onNodeDragStart = useCallback((_: unknown, n: { id: string; position: { y: number } }) => {
+  const onNodeDragStart = useCallback((_: unknown, n: { id: string; position: { x: number; y: number } }) => {
     const { items } = latest.current;
     const it = items.find((i) => i.id === n.id);
     if (!it) return;
+    dragCancelled.current = false;
     setEditing(null);
     setMenu(null);
     const index = siblingsOf(items, it).findIndex((i) => i.id === it.id);
-    setDrag({ id: it.id, y: n.position.y, index });
+    setDrag({ id: it.id, x: n.position.x, y: n.position.y, index, from: index, target: null });
   }, []);
 
-  const onNodeDrag = useCallback((_: unknown, n: { id: string; position: { y: number } }) => {
+  const onNodeDrag = useCallback((e: MouseEvent | TouchEvent, n: { id: string; position: { x: number; y: number } }) => {
+    if (dragCancelled.current) return;
     const { items, positions, restPositions, sizeOf } = latest.current;
     const it = items.find((i) => i.id === n.id);
     if (!it) return;
+    // Drop target: the card under the pointer (not this card or its branch) that can take it.
+    const p0 = 'touches' in e ? e.touches[0] : e;
+    const pt = p0 ? rf.screenToFlowPosition({ x: p0.clientX, y: p0.clientY }) : { x: NaN, y: NaN };
+    const branch = new Set([it.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const i of items)
+        if (i.parentId && branch.has(i.parentId) && !branch.has(i.id)) {
+          branch.add(i.id);
+          grew = true;
+        }
+    }
+    const hit = rf.getNodes().find(
+      (m) =>
+        !branch.has(m.id) &&
+        !m.id.startsWith('leaving:') &&
+        pt.x >= m.position.x &&
+        pt.x <= m.position.x + (m.width ?? 0) &&
+        pt.y >= m.position.y &&
+        pt.y <= m.position.y + (m.height ?? 0),
+    );
+    const target = hit && canMoveTo(items, it.id, hit.id) ? hit.id : null;
     let center = n.position.y + sizeOf(it).h / 2;
     const others = siblingsOf(items, it).filter((i) => i.id !== it.id);
     const ref = restPositions ?? positions;
@@ -530,15 +664,37 @@ function Canvas() {
       const p = ref.get(o.id);
       return p ? p.y + sizeOf(o).h / 2 < center : false;
     }).length;
-    setDrag({ id: it.id, y: n.position.y, index });
-  }, []);
+    setDrag((d) =>
+      d && { ...d, x: n.position.x, y: n.position.y, index: target ? d.from : index, target },
+    );
+  }, [rf]);
 
   const onNodeDragStop = useCallback(() => {
+    if (dragCancelled.current) {
+      dragCancelled.current = false;
+      setDrag(null);
+      return;
+    }
     setDrag((d) => {
-      if (d) move(d.id, d.index);
+      if (d?.target) reparent(d.id, d.target);
+      else if (d) move(d.id, d.index);
       return null;
     });
-  }, [move]);
+  }, [move, reparent]);
+
+  // Esc during a drag puts the card back; the rest of the gesture is ignored.
+  const dragging = !!drag;
+  useEffect(() => {
+    if (!dragging) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      dragCancelled.current = true;
+      setDrag(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [dragging]);
 
   /* ---------- camera ---------- */
 
@@ -688,18 +844,138 @@ function Canvas() {
     setMenu(null);
     setFocusId(null);
     setCompareId(null);
+    setWhyId(null);
+    setCelebrate(null);
   }, []);
 
   /* ---------- keyboard ---------- */
 
+  /** Remove a card and its branch, leaving short-lived ghosts of the visible cards to fade out. */
+  const removeWithFade = useCallback(
+    (id: string) => {
+      const sub = new Set([id]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const it of items)
+          if (it.parentId && sub.has(it.parentId) && !sub.has(it.id)) {
+            sub.add(it.id);
+            grew = true;
+          }
+      }
+      const gid = (x: string) => `leaving:${x}`;
+      const gNodes: DNode[] = nodesRef.current
+        .filter((n) => sub.has(n.id))
+        .map((n) => ({
+          ...n,
+          id: gid(n.id),
+          className: 'is-leaving',
+          selected: false,
+          draggable: false,
+          selectable: false,
+          data: { ...n.data, menuOpen: false, editing: false, celebrate: false, bump: false },
+        }));
+      const gEdges: Edge[] = latest.current.edges
+        .filter((e) => sub.has(e.target))
+        .map((e) => ({
+          ...e,
+          id: gid(e.id),
+          target: gid(e.target),
+          source: sub.has(e.source) ? gid(e.source) : e.source,
+          className: `${e.className ?? ''} is-leaving`,
+        }));
+      remove(id);
+      if (!gNodes.length) return;
+      const key = ++ghostKey.current;
+      const ids = new Set([...gNodes, ...gEdges].map((g) => g.id));
+      // A newer ghost of the same card (delete, undo, delete) replaces the older one.
+      setGhosts((gs) => [
+        ...gs.map((g) => ({ ...g, nodes: g.nodes.filter((n) => !ids.has(n.id)), edges: g.edges.filter((e) => !ids.has(e.id)) })),
+        { key, nodes: gNodes, edges: gEdges },
+      ]);
+      setTimeout(() => setGhosts((gs) => gs.filter((g) => g.key !== key)), 260);
+    },
+    [items, remove],
+  );
+
   const deleteItem = useCallback(
     (id: string) => {
       const it = byId.get(id);
-      remove(id);
+      removeWithFade(id);
       select(it?.parentId ?? null);
     },
-    [byId, remove, select],
+    [byId, removeWithFade, select],
   );
+
+  /* ---------- moment of choice ---------- */
+
+  /** Choose (or un-choose) an option; becoming chosen gets a small moment and the "Why?" prompt. */
+  const chooseWithMoment = useCallback(
+    (id: string) => {
+      const it = byId.get(id);
+      const becoming = it?.kind === 'option' && !it.chosen;
+      choose(id);
+      if (becoming) {
+        setCelebrate((c) => ({ id, n: (c?.n ?? 0) + 1, bump: true }));
+        setWhyId(id);
+      }
+      return becoming;
+    },
+    [byId, choose],
+  );
+
+  /* ---------- move & duplicate ---------- */
+
+  /** The card to pan to for `id` once it sits under `parentId`: pills show through their card. */
+  const revealUnder = useCallback(
+    (id: string, parentId: string) => {
+      const it = byId.get(id);
+      const parent = byId.get(parentId);
+      const asPill = compact && ((parent?.kind === 'option' && !!it && PILL_KINDS.has(it.kind)) || hidden.has(parentId));
+      let r: string | null = asPill ? parentId : id;
+      while (r && hidden.has(r)) r = byId.get(r)?.parentId ?? null;
+      setRevealId(r);
+    },
+    [byId, compact, hidden],
+  );
+
+  const moveItem = useCallback(
+    (id: string, parentId: string) => {
+      reparent(id, parentId);
+      revealUnder(id, parentId);
+    },
+    [reparent, revealUnder],
+  );
+
+  const duplicateItem = useCallback(
+    (id: string) => {
+      const it = byId.get(id);
+      if (!it?.parentId) return;
+      const copy = duplicate(id);
+      if (!copy) return;
+      select(copy);
+      setRevealId(hidden.has(id) ? it.parentId : copy);
+    },
+    [byId, duplicate, select, hidden],
+  );
+
+  // Swell for the first beat, settle, then drop the ring class.
+  const celebrateN = celebrate?.n;
+  useEffect(() => {
+    if (celebrateN === undefined) return;
+    const a = setTimeout(() => setCelebrate((c) => (c && c.n === celebrateN ? { ...c, bump: false } : c)), 250);
+    const b = setTimeout(() => setCelebrate((c) => (c && c.n === celebrateN ? null : c)), 1000);
+    return () => {
+      clearTimeout(a);
+      clearTimeout(b);
+    };
+  }, [celebrateN]);
+
+  // The prompt closes once its option is no longer chosen (undo, un-choose, another pick), is gone, or the guide opens.
+  const whyOption = whyId ? byId.get(whyId) : undefined;
+  const whyProblem = whyOption?.parentId ? byId.get(whyOption.parentId) : undefined;
+  if (whyId && (!whyOption?.chosen || !whyProblem || guide)) setWhyId(null);
+  const whyOpen = !!whyId && !!whyOption?.chosen && !!whyProblem && !guide;
 
   // Visible tree for arrow-key navigation (cards, plus pills inside compact option cards).
   const navChildren = useCallback(
@@ -801,6 +1077,11 @@ function Canvas() {
         if (e.key === 'Escape') setGuide(null);
         return;
       }
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault(); // not the browser's bookmark shortcut
+        if (!compareId && selectedId) duplicateItem(selectedId);
+        return;
+      }
       if (mod || e.altKey || compareId) return;
 
       // Add menu open: arrows / Enter / number keys pick a type.
@@ -896,9 +1177,16 @@ function Canvas() {
   }, [
     selectedId, byId, kids, nodeIds, menu, focusId, select, undo, redo, deleteItem,
     handleAdd, startEdit, toggleFocus, navChildren, navSiblings, pickMenu, compareId, optionsOf, guide,
+    duplicateItem,
   ]);
 
   const selected = selectedId ? byId.get(selectedId) : undefined;
+  // "Move to…": every card that could take the selected one; options first, then requirements.
+  const moveTargets = useMemo(() => {
+    if (!selectedId) return [];
+    const rank = (k: Kind) => (k === 'option' ? 0 : k === 'requirement' ? 1 : 2);
+    return items.filter((t) => canMoveTo(items, selectedId, t.id)).sort((a, b) => rank(a.kind) - rank(b.kind));
+  }, [items, selectedId]);
   const focused = focusId ? byId.get(focusId) : undefined;
   const sideOpen = sidebar === 'open';
   // On phones the sidebar covers the canvas, so tuck it away after a choice.
@@ -910,8 +1198,8 @@ function Canvas() {
     <ActionsContext.Provider value={actions}>
       <div className={`app ${sideOpen ? 'side-open' : ''} ${selected && !guide ? 'insp-open' : ''}`}>
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
+          nodes={flowNodes}
+          edges={flowEdges}
           nodeTypes={nodeTypes}
           onNodeClick={(_, n) => {
             setGuide(null);
@@ -1123,7 +1411,7 @@ function Canvas() {
           </div>
         )}
 
-        {items.length > 0 && !guide && (
+        {items.length > 0 && !guide && !whyOpen && (
           <div className="hint glass">
             {editing ? (
               <>
@@ -1143,7 +1431,7 @@ function Canvas() {
               </>
             ) : (
               <>
-                Double-click to rename <span className="dot-sep" /> drag to reorder
+                Double-click to rename <span className="dot-sep" /> drag to move or reorder
                 <span className="dot-sep" /> <Kbd>⌘Z</Kbd> undo
               </>
             )}
@@ -1157,7 +1445,7 @@ function Canvas() {
             childrenOf={(id) => allKids.get(id) ?? []}
             guide={guide}
             setGuide={setGuide}
-            store={{ add, update, remove }}
+            store={{ add, update, remove: removeWithFade }}
             onDone={() => {
               setGuide(null);
               select(null);
@@ -1179,8 +1467,11 @@ function Canvas() {
             focusToken={fresh?.id === selected.id ? fresh.n : 0}
             onUpdate={(patch) => update(selected.id, patch)}
             onAdd={(k) => handleAdd(selected.id, k)}
-            onChoose={() => choose(selected.id)}
+            onChoose={() => chooseWithMoment(selected.id)}
             onDelete={() => deleteItem(selected.id)}
+            onDuplicate={selected.parentId ? () => duplicateItem(selected.id) : undefined}
+            moveTargets={moveTargets}
+            onMove={(targetId) => moveItem(selected.id, targetId)}
             onClose={() => select(null)}
             onFocus={
               nodeIds.has(selected.id) && navChildren(selected.id).length
@@ -1232,9 +1523,39 @@ function Canvas() {
           <Compare
             problem={byId.get(compareId)!}
             items={items}
-            onChoose={(id) => choose(id)}
+            onChoose={(id) => {
+              // Becoming chosen: close the sheet so the moment happens on the canvas.
+              if (chooseWithMoment(id)) {
+                setCompareId(null);
+                setRevealId(id);
+              }
+            }}
             onClose={() => setCompareId(null)}
           />
+        )}
+
+        {whyOpen && whyOption && whyProblem && (
+          <WhyPrompt
+            key={whyOption.id}
+            option={whyOption}
+            rationale={whyProblem.rationale ?? ''}
+            onRationale={(v) => update(whyProblem.id, { rationale: v })}
+            onClose={() => setWhyId(null)}
+          />
+        )}
+
+        {pillDrag && byId.get(pillDrag.id) && (
+          <div
+            className="pill-float"
+            style={{
+              left: pillDrag.x - pillDrag.ox,
+              top: pillDrag.y - pillDrag.oy,
+              transformOrigin: `${pillDrag.ox}px ${pillDrag.oy}px`,
+              transform: `scale(${pillDrag.zoom})`,
+            }}
+          >
+            <PillFace p={byId.get(pillDrag.id)!} />
+          </div>
         )}
 
         {toast && (

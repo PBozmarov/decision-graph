@@ -296,6 +296,20 @@ export function applyMove(items: Item[], id: string, index: number): Item[] {
   return [...rest.slice(0, at), it, ...rest.slice(at)];
 }
 
+/* ---------- move ---------- */
+
+/** Can `id` (with its branch) move under `targetId`? Shared by drag-and-drop and "Move to…". */
+export function canMoveTo(items: Item[], id: string, targetId: string): boolean {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const it = byId.get(id);
+  const target = byId.get(targetId);
+  if (!it || !target || target.id === it.id || it.parentId === target.id) return false;
+  if (!KINDS[target.kind].children.includes(it.kind)) return false;
+  // Not into its own branch.
+  for (let p = target.parentId; p; p = byId.get(p)?.parentId ?? null) if (p === id) return false;
+  return true;
+}
+
 /* ---------- sample ---------- */
 
 export function sampleItems(): Item[] {

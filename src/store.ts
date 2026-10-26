@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { applyMove, makeItem, type Item, type Kind } from './model';
+import { applyMove, canMoveTo, makeItem, type Item, type Kind } from './model';
 import { removeCloudDoc, saveCloudDoc, watchDocs } from './cloud';
 
 const LIB_KEY = 'decision-graph:library:v1';
@@ -412,6 +412,68 @@ export function useDoc(uid: string | null) {
     [commit],
   );
 
+  /** Move a card (and its branch) under another parent; it lands last among its new siblings. */
+  const reparent = useCallback(
+    (id: string, parentId: string) => {
+      commit((prev) => {
+        if (!canMoveTo(prev, id, parentId)) return prev;
+        const it = prev.find((p) => p.id === id)!;
+        // A chosen option leaving its decision: that decision is undecided again.
+        const unchoose = it.kind === 'option' && it.chosen;
+        const rest = prev
+          .filter((p) => p.id !== id)
+          .map((p) =>
+            p.id === parentId && p.collapsed
+              ? { ...p, collapsed: false }
+              : unchoose && p.id === it.parentId
+                ? { ...p, decidedAt: undefined }
+                : p,
+          );
+        return [...rest, { ...it, parentId, ...(unchoose ? { chosen: false } : {}) }];
+      });
+    },
+    [commit],
+  );
+
+  /** Copy a card and its whole branch right below the original; returns the copy's id (root decisions: null). */
+  const duplicate = useCallback(
+    (id: string): string | null => {
+      const src = currentItems(libRef.current).find((p) => p.id === id);
+      if (!src || src.parentId === null) return null;
+      // Ids are fixed up front so the updater stays pure (it may run twice).
+      const ids = new Map([[id, crypto.randomUUID()]]);
+      const newId = (old: string) => {
+        if (!ids.has(old)) ids.set(old, crypto.randomUUID());
+        return ids.get(old)!;
+      };
+      commit((prev) => {
+        const at = prev.findIndex((p) => p.id === id);
+        if (at < 0) return prev;
+        const branch = new Set([id]);
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const p of prev)
+            if (p.parentId && branch.has(p.parentId) && !branch.has(p.id)) {
+              branch.add(p.id);
+              grew = true;
+            }
+        }
+        const copies = prev
+          .filter((p) => branch.has(p.id))
+          .sort((a, b) => (a.id === id ? -1 : b.id === id ? 1 : 0))
+          .map((p) =>
+            p.id === id
+              ? { ...p, id: newId(p.id), title: p.title ? `${p.title} copy` : '', chosen: false }
+              : { ...p, id: newId(p.id), parentId: newId(p.parentId!) },
+          );
+        return [...prev.slice(0, at + 1), ...copies, ...prev.slice(at + 1)];
+      });
+      return ids.get(id)!;
+    },
+    [commit],
+  );
+
   /** Fill the current decision (e.g. from a template); undoable. */
   const replaceItems = useCallback((next: Item[]) => commit(() => next), [commit]);
 
@@ -433,6 +495,8 @@ export function useDoc(uid: string | null) {
     update,
     remove,
     move,
+    reparent,
+    duplicate,
     choose,
     undo,
     redo,

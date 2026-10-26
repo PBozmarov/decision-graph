@@ -1,8 +1,20 @@
-import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { KINDS, isWeighted, type Item, type Stats, type Verdict } from './model';
 import { Dots } from './DecisionNode';
 import { VerdictHeadline } from './Verdict';
-import { IconArrowDown, IconArrowUp, IconCheck, IconClose, IconColumns, IconFocus, IconTrash, KindIcon } from './icons';
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconCheck,
+  IconChevron,
+  IconClose,
+  IconColumns,
+  IconCopy,
+  IconFocus,
+  IconTrash,
+  KindIcon,
+} from './icons';
 
 const IMPACT = ['', 'Minor', 'Low', 'Moderate', 'High', 'Critical'];
 
@@ -42,6 +54,76 @@ function AutoText({
   );
 }
 
+/** "Move to…": a menu of the cards that can take this one. Rendered in a portal so the scrolling panel can't clip it. */
+function MoveTo({ targets, onMove }: { targets: Item[]; onMove: (targetId: string) => void }) {
+  const btn = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<CSSProperties | null>(null);
+  useEffect(() => {
+    if (!pos) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setPos(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [pos]);
+  const open = () => {
+    const r = btn.current!.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - 16;
+    const above = r.top - 16;
+    const up = below < 240 && above > below; // e.g. the phone bottom sheet
+    setPos({
+      right: Math.max(8, window.innerWidth - r.right),
+      ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
+      maxHeight: Math.min(320, up ? above : below),
+      transformOrigin: up ? 'bottom right' : 'top right',
+    });
+  };
+  return (
+    <section className="insp-section row">
+      <div className="insp-row-title">Move to</div>
+      <button
+        ref={btn}
+        className={`btn-secondary move-btn ${pos ? 'is-open' : ''}`}
+        onClick={() => (pos ? setPos(null) : open())}
+        aria-haspopup="menu"
+        aria-expanded={!!pos}
+      >
+        Choose… <IconChevron size={13} />
+      </button>
+      {pos &&
+        createPortal(
+          <>
+            <div className="export-scrim" onClick={() => setPos(null)} />
+            <div className="menu glass move-menu" role="menu" style={pos}>
+              {targets.map((t) => (
+                <button
+                  key={t.id}
+                  className="menu-item"
+                  role="menuitem"
+                  style={{ '--k': `var(--${t.kind})` } as CSSProperties}
+                  onClick={() => {
+                    setPos(null);
+                    onMove(t.id);
+                  }}
+                >
+                  <span className="dn-chip">
+                    <KindIcon kind={t.kind} size={13} />
+                  </span>
+                  <span className={`move-title ${t.title ? '' : 'ph'}`}>
+                    {t.title || `Untitled ${KINDS[t.kind].label.toLowerCase()}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
+    </section>
+  );
+}
+
 export function Inspector({
   item,
   stats,
@@ -50,6 +132,9 @@ export function Inspector({
   onAdd,
   onChoose,
   onDelete,
+  onDuplicate,
+  moveTargets,
+  onMove,
   onClose,
   onFocus,
   focused,
@@ -66,6 +151,11 @@ export function Inspector({
   onAdd: (kind: Item['kind']) => void;
   onChoose: () => void;
   onDelete: () => void;
+  /** Absent for root decisions. */
+  onDuplicate?: () => void;
+  /** Cards this one can move under ("Move to…" is hidden when empty). */
+  moveTargets?: Item[];
+  onMove?: (targetId: string) => void;
   onClose: () => void;
   /** Present when this card has a branch that can be focused. */
   onFocus?: () => void;
@@ -300,6 +390,8 @@ export function Inspector({
         </section>
       )}
 
+      {onMove && moveTargets && moveTargets.length > 0 && <MoveTo targets={moveTargets} onMove={onMove} />}
+
       {reorder && (reorder.canUp || reorder.canDown) && (
         <section className="insp-section row">
           <div className="insp-row-title">Order</div>
@@ -314,12 +406,29 @@ export function Inspector({
         </section>
       )}
 
-      <footer className="insp-foot">
-        <button className="btn-danger" onClick={onDelete}>
-          <IconTrash size={14} /> Delete{meta.children.length ? ' branch' : ''}
-        </button>
-        <span className="kbd-hint">⌫</span>
-      </footer>
+      {onDuplicate ? (
+        <footer className="insp-foot">
+          <span className="insp-foot-group">
+            <button className="btn-danger btn-quiet" onClick={onDuplicate}>
+              <IconCopy size={14} /> Duplicate
+            </button>
+            <span className="kbd-hint">⌘D</span>
+          </span>
+          <span className="insp-foot-group">
+            <button className="btn-danger" onClick={onDelete}>
+              <IconTrash size={14} /> Delete{meta.children.length ? ' branch' : ''}
+            </button>
+            <span className="kbd-hint">⌫</span>
+          </span>
+        </footer>
+      ) : (
+        <footer className="insp-foot">
+          <button className="btn-danger" onClick={onDelete}>
+            <IconTrash size={14} /> Delete{meta.children.length ? ' branch' : ''}
+          </button>
+          <span className="kbd-hint">⌫</span>
+        </footer>
+      )}
     </aside>
   );
 }

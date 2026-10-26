@@ -185,7 +185,7 @@ textarea:focus-visible {
   border-radius: 18px;
   box-shadow: var(--shadow-card);
   transition: box-shadow 260ms ease, border-color 260ms ease, opacity 360ms ease,
-    transform 260ms var(--spring);
+    transform 260ms var(--spring), scale 520ms var(--pop);
   animation: pop-in 420ms var(--pop) backwards;
 }
 @keyframes pop-in {
@@ -338,6 +338,13 @@ textarea:focus-visible {
 .badge-chosen {
   color: #fff;
   background: var(--option);
+  animation: badge-pop 420ms var(--pop) both;
+}
+@keyframes badge-pop {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
 }
 .badge-lead {
   color: var(--pro);
@@ -2476,4 +2483,306 @@ button.brand.is-on .brand-side {
     bottom: 8px;
     max-height: min(56vh, 520px);
   }
+}
+
+/* ---------- moment of choice ---------- */
+/* A ring in the option color expands from the card and fades; the card swells for a beat. */
+.dn.is-celebrating::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 2px solid var(--option);
+  pointer-events: none;
+  animation: ring-out 900ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes ring-out {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    inset: -18px;
+    border-radius: 34px;
+    border-width: 1px;
+    opacity: 0;
+  }
+}
+.dn.is-bumped {
+  scale: 1.03;
+  transition: box-shadow 260ms ease, border-color 260ms ease, opacity 360ms ease,
+    transform 260ms var(--spring), scale 250ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dn.is-celebrating::after {
+    content: none;
+  }
+  .dn.is-bumped {
+    scale: none;
+  }
+}
+
+/* "Why this one?" — a small sheet centered in the free canvas area, like the hint bar */
+.why {
+  --k: var(--option);
+  position: absolute;
+  z-index: 12;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, calc(100% - 32px));
+  padding: 16px 16px 12px;
+  border-radius: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: why-in 460ms var(--spring) both;
+  transition: left 380ms var(--spring);
+}
+@keyframes why-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 16px) scale(0.98);
+  }
+}
+.app.side-open .why {
+  left: calc(50% + 140px);
+}
+.app.insp-open .why {
+  left: calc(50% - 186px);
+}
+.app.side-open.insp-open .why {
+  left: calc(50% - 46px);
+}
+.why-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+.why-check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--option);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--option) 35%, transparent);
+  animation: badge-pop 520ms var(--pop) 120ms both;
+}
+.why-text {
+  min-width: 0;
+  padding-top: 1px;
+}
+.why-title {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.why-title b {
+  font-weight: inherit;
+  color: var(--option);
+}
+.why-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+.why .why-input {
+  max-height: 132px;
+  overflow-y: auto;
+}
+.why-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.why-skip {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--text-2);
+  transition: background 140ms ease, color 140ms ease;
+}
+.why-skip:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+.why .why-done {
+  height: 32px;
+  padding: 0 10px 0 14px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 3px 10px color-mix(in srgb, var(--option) 30%, transparent);
+}
+.why-kbd {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.2);
+}
+@media (pointer: coarse) {
+  .why-kbd {
+    display: none;
+  }
+  .why .why-done {
+    padding: 0 14px;
+  }
+}
+@media (max-width: 760px) {
+  .why,
+  .app.side-open .why,
+  .app.insp-open .why,
+  .app.side-open.insp-open .why {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    transform: none;
+    border-radius: 24px;
+    animation-name: sheet-in;
+  }
+}
+
+/* ---------- deleted cards fade out ---------- */
+.react-flow__node.is-leaving {
+  pointer-events: none !important; /* React Flow sets an inline pointer-events: all */
+  z-index: 0 !important;
+}
+.react-flow__node.is-leaving .dn {
+  animation: card-out 240ms ease forwards;
+}
+@keyframes card-out {
+  to {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+.react-flow__edge.is-leaving .react-flow__edge-path {
+  animation: edge-out 200ms ease forwards;
+}
+@keyframes edge-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- move & duplicate ---------- */
+/* a dragged card or pill would land here */
+.dn.is-drop-target {
+  border-color: color-mix(in srgb, var(--k) 70%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--k) 22%, transparent), var(--shadow-hover);
+  scale: 1.02;
+  transition: box-shadow 200ms ease, border-color 200ms ease, opacity 360ms ease,
+    transform 260ms var(--spring), scale 240ms var(--spring);
+}
+/* compact view: the pill that follows the pointer, and the one it left behind */
+.pill-float {
+  position: fixed;
+  z-index: 30;
+  pointer-events: none;
+}
+.pill-float .pill-item {
+  scale: 1.04;
+  background: color-mix(in srgb, var(--k) 14%, var(--card));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), 0 10px 24px -6px rgba(0, 0, 0, 0.22);
+  animation: pill-lift 180ms var(--spring) both;
+}
+.pill-float .pill-item.is-must {
+  box-shadow: inset 0 0 0 1.25px color-mix(in srgb, var(--k) 55%, transparent), 0 2px 6px rgba(0, 0, 0, 0.08),
+    0 10px 24px -6px rgba(0, 0, 0, 0.22);
+}
+@keyframes pill-lift {
+  from {
+    scale: 1;
+  }
+}
+.pill-item.is-lifted {
+  opacity: 0.4;
+}
+body.is-pill-drag,
+body.is-pill-drag * {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* inspector: "Move to…" */
+.move-btn {
+  height: 32px;
+  padding: 0 10px 0 12px;
+  gap: 5px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 560;
+}
+.move-btn svg {
+  rotate: 90deg;
+  color: var(--text-2);
+  transition: rotate 200ms var(--spring);
+}
+.move-btn.is-open svg {
+  rotate: -90deg;
+}
+.menu.move-menu {
+  position: fixed;
+  top: auto;
+  left: auto;
+  z-index: 21;
+  min-width: 220px;
+  max-width: min(300px, calc(100vw - 16px));
+  overflow-y: auto;
+  transform: none;
+  transform-origin: top right;
+  animation: drop-in 220ms var(--spring) both;
+}
+.move-menu .menu-item {
+  flex: none;
+  min-width: 0;
+}
+.move-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* inspector footer: Duplicate on the left, Delete on the right */
+.insp-foot-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.insp-foot-group + .insp-foot-group .btn-danger {
+  margin-left: 0;
+}
+.btn-danger.btn-quiet {
+  color: var(--text-2);
+}
+.btn-danger.btn-quiet:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+/* keyboard shortcuts mean nothing on touch screens */
+@media (pointer: coarse) {
+  .insp-foot .kbd-hint {
+    display: none;
+  }
+}
+/* over a drop target, the dragged card steps back so the target shows through */
+.react-flow__node.is-dragged.has-target .dn {
+  opacity: 0.45;
+  transform: scale(0.92) rotate(-0.6deg);
+}
+.react-flow__node.is-following.has-target .dn {
+  opacity: 0.45;
 }
