@@ -1,4 +1,4 @@
-import { KINDS, SIZE, PILL_KINDS, type Item, type Kind, type Size, type Verdict } from './model';
+import { KINDS, SIZE, PILL_KINDS, placeholderOf, type Item, type Kind, type Size, type Verdict } from './model';
 
 // Pill geometry — must match .pill-item in index.css.
 export const PILL_H = 22;
@@ -53,9 +53,9 @@ const titleSpec = (k: Kind) =>
   k === 'problem' || k === 'option' || k === 'note' ? TITLE[k] : TITLE.leaf;
 
 /** 1 or 2: how many lines the card title wraps to (titles are clamped to 2). */
-export function titleLines(it: Item) {
+export function titleLines(it: Item, parentKind?: Kind | null) {
   const spec = titleSpec(it.kind);
-  const text = it.title || KINDS[it.kind].placeholder;
+  const text = it.title || placeholderOf(it.kind, parentKind);
   if (textWidth(text, spec.font) <= spec.width) return 1;
   let line = '';
   let lines = 1;
@@ -74,6 +74,7 @@ export function titleLines(it: Item) {
 
 // Verdict geometry — must match .verdict / .vd-* in index.css.
 const FOOT_H = 15; // today's one-line .dn-foot (12px, normal line height)
+const CARD_GAP = 8; // .dn gap between rows
 const VD_TOP = 9 + 0.5; // padding-top + separator line
 const VD_HEAD = 16;
 const VD_GAP = 7;
@@ -87,14 +88,23 @@ export const showsVerdict = (v: Verdict | null | undefined): v is Verdict =>
 /** Lines in the bar list: every option up to 4, otherwise 3 plus a "+N more" line. */
 export const verdictLines = (v: Verdict) => Math.min(v.rows.length, 4);
 
-/** Card size: shorter when the title fits on one line; compact options grow with their pills. */
-export function cardSize(it: Item, pills: Item[] | null, verdict?: Verdict | null): Size {
+/**
+ * Card size: shorter when the title fits on one line; compact options grow with their pills.
+ * Options with sub-options (`subCount`) add the one-line sub-option footer.
+ */
+export function cardSize(
+  it: Item,
+  pills: Item[] | null,
+  verdict?: Verdict | null,
+  { parentKind, subCount = 0 }: { parentKind?: Kind | null; subCount?: number } = {},
+): Size {
   const base = SIZE[it.kind];
-  let h = base.h - (titleLines(it) === 1 ? titleSpec(it.kind).line : 0);
+  let h = base.h - (titleLines(it, parentKind) === 1 ? titleSpec(it.kind).line : 0);
   if (pills) {
     const rows = pillRows(pills.filter((p) => PILL_KINDS.has(p.kind)));
     if (rows) h += PILLS_TOP + rows * PILL_H + (rows - 1) * PILL_GAP;
   }
+  if (it.kind === 'option' && subCount > 0) h += CARD_GAP + FOOT_H;
   if (it.kind === 'problem' && showsVerdict(verdict)) {
     let extra = VD_TOP + VD_HEAD - FOOT_H;
     if (verdict.showBars) {

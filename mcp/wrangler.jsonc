@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "decision-graph-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  // agents (McpAgent) uses AsyncLocalStorage from node:async_hooks.
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+
+  // One Durable Object per MCP session (McpAgent). SQLite-backed classes work on the Free plan.
+  "durable_objects": {
+    "bindings": [{ "name": "MCP_OBJECT", "class_name": "DecisionGraphMCP" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DecisionGraphMCP"] }],
+
+  // OAuth clients, grants and tokens (@cloudflare/workers-oauth-provider).
+  // Deploy: `npx wrangler kv namespace create OAUTH_KV`, then paste the id here.
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "53776dc636944a5b977e646f3d61a871" }],
+
+  // Public values (the same ones the web app ships). STATE_SECRET is a secret:
+  // `openssl rand -hex 32 | npx wrangler secret put STATE_SECRET` (locally: .dev.vars).
+  "vars": {
+    "FIREBASE_PROJECT_ID": "pomoplan-tech-25101",
+    "FIREBASE_API_KEY": "AIzaSyC2sI8pDDMs9VCnrAr78zNC16agzKKlAXg",
+    "FIREBASE_AUTH_DOMAIN": "pomoplan-tech-25101.firebaseapp.com",
+    "OWNER_UID": "8XVQGGB4jrVpNd1h90RRJ0eJo8Y2",
+    "OWNER_TZ": "Europe/Sofia",
+    "APP_URL": "https://pomoplan.tech"
+  }
+}

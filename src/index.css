@@ -294,6 +294,16 @@ textarea:focus-visible {
   text-transform: uppercase;
   color: var(--text-2);
 }
+/* a crowded header (SUB-OPTION, a badge, the gut face) gives way in the label first */
+.dn-head .dn-kind {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dn-head .badge {
+  flex: none;
+}
 .dn-spacer {
   flex: 1;
 }
@@ -321,6 +331,15 @@ textarea:focus-visible {
   font-size: 12px;
   color: var(--text-2);
   font-weight: 500;
+}
+/* options with sub-options: one line (card heights are fixed) */
+.dn-foot.dn-subs {
+  flex: none;
+  height: 15px;
+  line-height: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .badge {
@@ -903,6 +922,18 @@ textarea:focus-visible {
   font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+/* the net's breakdown when it counts a sub-option */
+.net-via {
+  margin-top: -7px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .btn-primary {
@@ -1852,6 +1883,13 @@ button.brand.is-on .brand-side {
 .cmp-net .badge {
   align-self: center;
 }
+.cmp-via {
+  margin-top: -6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
 .cmp-cell {
   padding: 14px 6px 12px;
   border-bottom: 0.5px solid var(--glass-border);
@@ -2763,6 +2801,9 @@ body.is-pill-drag * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.move-pre {
+  color: var(--text-3);
+}
 
 /* inspector footer: Duplicate on the left, Delete on the right */
 .insp-foot-group {
@@ -3067,4 +3108,375 @@ body.is-pill-drag * {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* ---------- looking back ---------- */
+.badge-review {
+  color: var(--risk);
+  background: color-mix(in srgb, var(--risk) 14%, transparent);
+}
+.vd-outcome {
+  white-space: nowrap;
+}
+.side-chosen-tx {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.side-outcome {
+  display: inline-flex;
+  flex: none;
+  margin-left: 2px;
+}
+.side-due {
+  flex: none;
+  color: var(--risk);
+  font-weight: 600;
+}
+.vd-outcome svg {
+  vertical-align: -1px;
+}
+
+/* Check-back quick picks: quiet until one is picked */
+.chip.chip-pick {
+  --k: var(--text-2);
+  padding: 0 12px;
+}
+.chip.chip-pick.is-on {
+  --k: var(--option);
+}
+.why-review {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.why-review-label {
+  margin-right: 2px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.checkback .chip {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 12.5px;
+}
+.why-review .chip {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 12.5px;
+}
+
+/* Inspector: the check-back date, then the outcome */
+.checkback {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+}
+.chip-date {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.chip-date input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.chip-date:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--option) 45%, transparent);
+}
+.checkback-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.checkback-line svg {
+  flex: none;
+}
+.checkback-line.t-risk {
+  color: var(--risk);
+  font-weight: 600;
+}
+.checkback-tx {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.checkback-tx b {
+  color: var(--text);
+  font-weight: 600;
+}
+.icon-btn.checkback-clear {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: var(--text-3);
+}
+.icon-btn.checkback-clear:hover {
+  color: var(--text);
+  background: var(--fill);
+}
+.outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+.outcome-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.outcome-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 14%, transparent);
+}
+.outcome-text {
+  flex: 1;
+  min-width: 0;
+}
+.outcome-title {
+  font-size: 15px;
+  font-weight: 650;
+}
+.outcome-text .insp-row-sub {
+  margin-top: 1px;
+}
+.outcome-edit {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  margin-right: -8px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--option);
+  transition: background 140ms ease;
+}
+.outcome-edit:hover {
+  background: color-mix(in srgb, var(--option) 10%, transparent);
+}
+.outcome-note {
+  padding: 1px 0 1px 11px;
+  border-left: 2px solid color-mix(in srgb, var(--k) 40%, transparent);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The look-back sheet: the Why prompt's sheet (.why) with its own content */
+.review-eyebrow {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--problem);
+}
+.why-title.review-title {
+  display: flex;
+  gap: 0.28em;
+}
+.review-title > span {
+  flex: none;
+}
+.review-title b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.why-sub.review-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-why-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.review-quote {
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--option) 40%, transparent);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.review-rates {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.review-rate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 4px;
+  border-radius: 12px;
+  background: var(--fill);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 160ms var(--pop);
+  -webkit-tap-highlight-color: transparent; /* the selected tint is the feedback */
+}
+.review-rate svg {
+  flex: none;
+  color: var(--k);
+}
+.review-rate:hover {
+  background: var(--fill-2);
+  color: var(--text);
+}
+.review-rate.is-on {
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 45%, transparent);
+}
+.review-rate:active {
+  transform: scale(0.97);
+}
+.rate-short {
+  display: none;
+}
+.review .why-done:disabled {
+  opacity: 0.4;
+  filter: none;
+  transform: none;
+  box-shadow: none;
+  cursor: default;
+}
+@media (max-width: 760px) {
+  .rate-long {
+    display: none;
+  }
+  .rate-short {
+    display: inline;
+  }
+  .review-rate {
+    flex-direction: row;
+    gap: 5px;
+    font-size: 13px;
+  }
+}
+
+/* Due looks back: a pill in the hint bar's spot, once per page load */
+.due-bar {
+  position: absolute;
+  z-index: 5;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 6px 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  animation: due-in 380ms var(--pop) both;
+  transition: left 380ms var(--spring);
+}
+@keyframes due-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.96);
+  }
+}
+.app.side-open .due-bar {
+  left: calc(50% + 140px);
+}
+.app.insp-open .due-bar {
+  left: calc(50% - 186px);
+}
+.app.side-open.insp-open .due-bar {
+  left: calc(50% - 46px);
+}
+.due-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--risk);
+}
+.due-tx {
+  min-width: 0;
+  margin-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.due-bar .due-later {
+  flex: none;
+  border-radius: 999px;
+}
+.due-bar .due-go {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 3px 10px color-mix(in srgb, var(--option) 30%, transparent);
+}
+@media (max-width: 760px) {
+  .due-bar,
+  .app.side-open .due-bar,
+  .app.insp-open .due-bar,
+  .app.side-open.insp-open .due-bar {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    height: auto;
+    min-height: 52px;
+    padding: 8px 8px 8px 14px;
+    border-radius: 22px;
+    transform: none;
+    white-space: normal;
+    line-height: 1.3;
+    animation-name: due-in-sheet;
+  }
+  .due-tx {
+    flex: 1;
+    text-wrap: balance;
+  }
+  @keyframes due-in-sheet {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.96);
+    }
+  }
 }

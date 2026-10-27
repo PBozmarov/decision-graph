@@ -17,6 +17,8 @@ import { Sidebar } from './Sidebar';
 import { Compare } from './Compare';
 import { Guide, type GuideState } from './Guide';
 import { WhyPrompt } from './WhyPrompt';
+import { ReviewPrompt } from './ReviewPrompt';
+import { addDays, startOfDay } from './dates';
 import { Palette, type PaletteResult } from './Palette';
 import { docTitle, downloadBlob, graphToPng, slug, toMarkdown } from './export';
 import { parseBackup, toBackup } from './backup';
@@ -27,9 +29,11 @@ import {
   SIZE,
   applyMove,
   canMoveTo,
+  effectiveStats,
   groupChildren,
+  kindLabel,
   layout,
-  optionStats,
+  reviewDue,
   verdictOf,
   type Item,
   type Kind,
@@ -42,6 +46,7 @@ import { useDoc } from './store';
 import { NotAllowedError, cloudEnabled, signInWithGoogle, signOutUser, useAuth } from './cloud';
 import { TEMPLATES, type Template } from './templates';
 import {
+  IconClock,
   IconCompact,
   IconCopy,
   IconDoc,
@@ -237,6 +242,9 @@ function Canvas() {
   // The moment of choice: which option just got chosen (`n` replays repeats), and the "Why?" prompt.
   const [celebrate, setCelebrate] = useState<{ id: string; n: number; bump: boolean } | null>(null);
   const [whyId, setWhyId] = useState<string | null>(null);
+  // Looking back on a choice (the option it was for, so a different choice closes it), and the due banner's "Later".
+  const [review, setReview] = useState<{ docId: string; problemId: string; optionId: string; edit: boolean } | null>(null);
+  const [dueDismissed, setDueDismissed] = useState(false);
   // ⌘K palette, and the card it should jump to once that card's decision is open.
   const [palette, setPalette] = useState(false);
   const [jumpTo, setJumpTo] = useState<string | null>(null);
@@ -312,17 +320,14 @@ function Canvas() {
     [allKids, hidden],
   );
 
-  const stats = useMemo(() => {
-    const m = new Map<string, Stats>();
-    for (const it of items) if (it.kind === 'option') m.set(it.id, optionStats(allKids.get(it.id) ?? []));
-    return m;
-  }, [items, allKids]);
+  // An option's score also counts its chosen (or best viable) sub-option.
+  const stats = useMemo<Map<string, Stats>>(() => effectiveStats(items, allKids), [items, allKids]);
 
-  // Which option leads each decision (from the real items, not the drag preview).
+  // Which option leads each decision node: a problem, or an option with sub-options (from the real items, not the drag preview).
   const verdicts = useMemo(() => {
     const m = new Map<string, Verdict>();
     for (const it of items) {
-      if (it.kind !== 'problem') continue;
+      if (it.kind !== 'problem' && !stats.get(it.id)?.subCount) continue;
       const opts = (allKids.get(it.id) ?? []).filter((k) => k.kind === 'option');
       m.set(it.id, verdictOf(opts, (id) => stats.get(id)!));
     }
@@ -336,10 +341,13 @@ function Canvas() {
         it.id,
         it.kind === 'problem'
           ? cardSize(it, null, verdicts.get(it.id))
-          : cardSize(it, compact && it.kind === 'option' ? pillsOf(it.id) : null),
+          : cardSize(it, compact && it.kind === 'option' ? pillsOf(it.id) : null, null, {
+              parentKind: it.parentId ? byId.get(it.parentId)?.kind : null,
+              subCount: stats.get(it.id)?.subCount,
+            }),
       );
     return m;
-  }, [items, compact, pillsOf, verdicts]);
+  }, [items, byId, compact, pillsOf, verdicts, stats]);
   const sizeOf = useCallback((it: Item) => sizes.get(it.id) ?? SIZE[it.kind], [sizes]);
 
   const positions = useMemo(() => layout(shown, { size: sizeOf, hidden }), [shown, sizeOf, hidden]);
@@ -425,13 +433,14 @@ function Canvas() {
         data: {
           item: it,
           stats: stats.get(it.id) ?? null,
+          parentKind: it.parentId ? (byId.get(it.parentId)?.kind ?? null) : null,
           childCount: children.length,
           optionCount: children.filter((c) => c.kind === 'option').length,
-          chosenTitle:
-            it.kind === 'problem'
-              ? ((kids.get(it.id) ?? []).find((c) => c.kind === 'option' && c.chosen)?.title ?? null)
-              : null,
-          verdict: it.kind === 'problem' ? (verdicts.get(it.id) ?? null) : null,
+          chosenTitle: verdicts.has(it.id)
+            ? ((kids.get(it.id) ?? []).find((c) => c.kind === 'option' && c.chosen)?.title ?? null)
+            : null,
+          verdict: verdicts.get(it.id) ?? null,
+          reviewDue: reviewDue(it, allKids.get(it.id) ?? []),
           leading: leading.has(it.id),
           dimmed,
           faded,
@@ -468,7 +477,7 @@ function Canvas() {
     };
     for (const r of kids.get(null) ?? []) walk(r, false, false);
     return { nodes, edges };
-  }, [kids, hidden, compact, pillsOf, positions, sizeOf, selectedId, stats, verdicts, leading, drag, editing, menu, focusSet, guidedId, celebrate, dropId, liftedId]);
+  }, [kids, allKids, byId, hidden, compact, pillsOf, positions, sizeOf, selectedId, stats, verdicts, leading, drag, editing, menu, focusSet, guidedId, celebrate, dropId, liftedId]);
 
   const nodeIds = useMemo(() => new Set(nodes.map((n) => n.id)), [nodes]);
 
@@ -656,9 +665,10 @@ function Canvas() {
         pt.y >= m.position.y &&
         pt.y <= m.position.y + (m.height ?? 0),
     );
-    const target = hit && canMoveTo(items, it.id, hit.id) ? hit.id : null;
-    let center = n.position.y + sizeOf(it).h / 2;
     const others = siblingsOf(items, it).filter((i) => i.id !== it.id);
+    // Same-kind siblings are never drop targets: dragging among them reorders (options would nest otherwise).
+    const target = hit && !others.some((o) => o.id === hit.id) && canMoveTo(items, it.id, hit.id) ? hit.id : null;
+    let center = n.position.y + sizeOf(it).h / 2;
     const ref = restPositions ?? positions;
     // The parent doesn't move while reordering; use it to line up the two layouts.
     if (it.parentId && restPositions) {
@@ -849,6 +859,7 @@ function Canvas() {
     setFocusId(null);
     setCompareId(null);
     setWhyId(null);
+    setReview(null);
     setCelebrate(null);
   }, []);
 
@@ -922,6 +933,7 @@ function Canvas() {
       if (becoming) {
         setCelebrate((c) => ({ id, n: (c?.n ?? 0) + 1, bump: true }));
         setWhyId(id);
+        setReview(null);
       }
       return becoming;
     },
@@ -1005,6 +1017,53 @@ function Canvas() {
     (problemId: string) => (allKids.get(problemId) ?? []).filter((c) => c.kind === 'option'),
     [allKids],
   );
+
+  /* ---------- looking back ---------- */
+
+  // Every decision node (in every doc: sub-decisions and options with sub-options too) whose look back is due, the oldest date first.
+  const due = useMemo(() => {
+    const out: { docId: string; problemId: string; at: number }[] = [];
+    for (const d of doc.docs)
+      for (const it of d.items)
+        if (it.reviewAt !== undefined && reviewDue(it, d.items.filter((o) => o.parentId === it.id)))
+          out.push({ docId: d.id, problemId: it.id, at: it.reviewAt });
+    return out.sort((a, b) => a.at - b.at);
+  }, [doc.docs]);
+  const dueDocs = useMemo(() => new Set(due.map((d) => d.docId)), [due]);
+
+  // Same pattern as the Why prompt: the sheet closes once its choice is undone or changed, its decision is gone,
+  // another decision is opened, or the guide starts.
+  const reviewProblem = review && review.docId === doc.activeId ? byId.get(review.problemId) : undefined;
+  const reviewOption = review && reviewProblem ? byId.get(review.optionId) : undefined;
+  const reviewOk = !!reviewOption?.chosen && reviewOption.parentId === reviewProblem?.id && !guide;
+  if (review && !reviewOk) setReview(null);
+  const reviewOpen = !!review && reviewOk;
+
+  /** Open the look-back sheet for a decision, switching to its doc first if needed. */
+  const openReview = (docId: string, problemId: string, edit: boolean) => {
+    const list = doc.docs.find((d) => d.id === docId)?.items ?? [];
+    const optionId = list.find((o) => o.parentId === problemId && o.kind === 'option' && o.chosen)?.id;
+    if (!optionId) return;
+    if (docId !== doc.activeId) {
+      doc.switchDoc(docId);
+      resetView();
+      fit();
+    }
+    setGuide(null);
+    setWhyId(null);
+    setReview({ docId, problemId, optionId, edit });
+  };
+
+  /** The decision record of a decision node (a decision, or an option with sub-options), for the inspector. */
+  const recordOf = (node: Item | undefined) =>
+    node && {
+      problem: node,
+      chosen: optionsOf(node.id).find((o) => o.chosen) ?? null,
+      onRationale: (v: string) => update(node.id, { rationale: v }),
+      verdict: verdicts.get(node.id) ?? null,
+      onReviewAt: (ts: number | undefined) => update(node.id, { reviewAt: ts }),
+      onReview: (edit: boolean) => openReview(doc.activeId, node.id, edit),
+    };
 
   /* ---------- export ---------- */
 
@@ -1248,6 +1307,9 @@ function Canvas() {
   const closeSideOnMobile = () => {
     if (window.innerWidth <= 760) setSidebar('closed');
   };
+  // Once per page load: a nudge when looks back are due (not over the empty state or another sheet).
+  const bannerOpen =
+    !dueDismissed && doc.ready && !auth.loading && due.length > 0 && items.length > 0 && !guide && !whyOpen && !reviewOpen;
 
   return (
     <ActionsContext.Provider value={actions}>
@@ -1353,6 +1415,7 @@ function Canvas() {
             }}
             account={cloudEnabled ? auth.account : undefined}
             syncStatus={doc.syncStatus}
+            dueDocs={dueDocs}
             onSignIn={async () => {
               try {
                 await signInWithGoogle();
@@ -1462,12 +1525,37 @@ function Canvas() {
         {focused && !guide && (
           <div className="focus-pill glass">
             <IconFocus size={14} />
-            <span className="focus-title">{focused.title || KINDS[focused.kind].label}</span>
+            <span className="focus-title">{focused.title || kindLabel(focused.kind, byId.get(focused.parentId ?? '')?.kind)}</span>
             <button onClick={() => toggleFocus(null)}>Exit</button>
           </div>
         )}
 
-        {items.length > 0 && !guide && !whyOpen && (
+        {bannerOpen && (
+          <div className="due-bar glass" role="status">
+            <span className="due-ic">
+              <IconClock size={15} />
+            </span>
+            <span className="due-tx">
+              {due.length === 1 ? '1 decision is' : `${due.length} decisions are`} ready for a look back
+            </span>
+            <button className="why-skip due-later" onClick={() => setDueDismissed(true)}>
+              Later
+            </button>
+            <button
+              className="btn-primary due-go"
+              onClick={() => {
+                closeSideOnMobile();
+                // Engaging with the nudge counts as seeing it; closing the sheet shouldn't bring it back.
+                setDueDismissed(true);
+                openReview(due[0].docId, due[0].problemId, false);
+              }}
+            >
+              Review
+            </button>
+          </div>
+        )}
+
+        {items.length > 0 && !guide && !whyOpen && !reviewOpen && !bannerOpen && (
           <div className="hint glass">
             {editing ? (
               <>
@@ -1519,7 +1607,12 @@ function Canvas() {
         {selected && !guide && (
           <Inspector
             item={selected}
+            parentKind={byId.get(selected.parentId ?? '')?.kind ?? null}
             stats={stats.get(selected.id) ?? null}
+            via={(() => {
+              const v = stats.get(selected.id)?.via;
+              return v ? { title: byId.get(v)?.title ?? '', net: stats.get(v)?.net ?? 0 } : null;
+            })()}
             focusToken={fresh?.id === selected.id ? fresh.n : 0}
             onUpdate={(patch) => update(selected.id, patch)}
             onAdd={(k) => handleAdd(selected.id, k)}
@@ -1535,21 +1628,14 @@ function Canvas() {
                 : undefined
             }
             focused={focusId === selected.id}
-            record={(() => {
-              const problem =
-                selected.kind === 'problem'
-                  ? selected
-                  : selected.kind === 'option'
-                    ? byId.get(selected.parentId ?? '')
-                    : undefined;
-              if (!problem) return undefined;
-              return {
-                problem,
-                chosen: optionsOf(problem.id).find((o) => o.chosen) ?? null,
-                onRationale: (v: string) => update(problem.id, { rationale: v }),
-                verdict: verdicts.get(problem.id) ?? null,
-              };
-            })()}
+            record={recordOf(
+              selected.kind === 'problem'
+                ? selected
+                : selected.kind === 'option'
+                  ? byId.get(selected.parentId ?? '')
+                  : undefined,
+            )}
+            subRecord={selected.kind === 'option' && verdicts.has(selected.id) ? recordOf(selected) : undefined}
             reorder={(() => {
               if (!touch) return undefined;
               const sibs = items.filter((i) => i.parentId === selected.parentId && i.kind === selected.kind);
@@ -1569,6 +1655,11 @@ function Canvas() {
             }
             onCompare={
               selected.kind === 'problem' && optionsOf(selected.id).length >= 2
+                ? () => setCompareId(selected.id)
+                : undefined
+            }
+            onCompareSubs={
+              selected.kind === 'option' && optionsOf(selected.id).length >= 2
                 ? () => setCompareId(selected.id)
                 : undefined
             }
@@ -1596,7 +1687,31 @@ function Canvas() {
             option={whyOption}
             rationale={whyProblem.rationale ?? ''}
             onRationale={(v) => update(whyProblem.id, { rationale: v })}
+            reviewAt={whyProblem.reviewAt}
+            onReviewAt={(ts) => update(whyProblem.id, { reviewAt: ts })}
             onClose={() => setWhyId(null)}
+          />
+        )}
+
+        {reviewOpen && reviewProblem && reviewOption && (
+          <ReviewPrompt
+            key={`${reviewProblem.id}:${review.edit}`}
+            problem={reviewProblem}
+            option={reviewOption}
+            edit={review.edit}
+            onSave={(outcome) => {
+              update(reviewProblem.id, { outcome });
+              setReview(null);
+              setToast('Saved to the decision record');
+              // More looks back waiting: offer the next one.
+              if (due.some((d) => d.problemId !== reviewProblem.id)) setDueDismissed(false);
+            }}
+            onLater={() => {
+              update(reviewProblem.id, { reviewAt: startOfDay(addDays(Date.now(), 3)) });
+              setReview(null);
+              setToast("We'll ask again in 3 days");
+            }}
+            onClose={() => setReview(null)}
           />
         )}
 

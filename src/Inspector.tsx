@@ -1,13 +1,28 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { GUT_KEY, KINDS, isWeighted, type Item, type Stats, type Verdict } from './model';
+import {
+  GUT_KEY,
+  KINDS,
+  OUTCOME,
+  addLabel,
+  isWeighted,
+  kindLabel,
+  placeholderOf,
+  reviewDue,
+  type Item,
+  type Kind,
+  type Stats,
+  type Verdict,
+} from './model';
 import { Dots } from './DecisionNode';
 import { VerdictHeadline } from './Verdict';
+import { fmtDay, quickPicks, relDay, tomorrow } from './dates';
 import {
   IconArrowDown,
   IconArrowUp,
   IconCheck,
   IconChevron,
+  IconClock,
   IconClose,
   IconColumns,
   IconCopy,
@@ -15,6 +30,7 @@ import {
   IconTrash,
   GutIcon,
   KindIcon,
+  TrendIcon,
 } from './icons';
 
 const IMPACT = ['', 'Minor', 'Low', 'Moderate', 'High', 'Critical'];
@@ -81,8 +97,112 @@ export function GutControl({ value, onChange }: { value: Item['gut']; onChange: 
   );
 }
 
+/** "YYYY-MM-DD" for a date input, in local time. */
+const isoDay = (ts: number) => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** A decided decision: set a check-back date, look back when it comes, then keep the outcome. */
+function CheckBack({
+  problem,
+  chosen,
+  onReviewAt,
+  onReview,
+}: {
+  problem: Item;
+  chosen: Item;
+  onReviewAt: (ts: number | undefined) => void;
+  onReview: (edit: boolean) => void;
+}) {
+  const { reviewAt, outcome } = problem;
+  if (outcome) {
+    const o = OUTCOME[outcome.rating];
+    return (
+      <div className="outcome" style={{ '--k': o.color } as CSSProperties}>
+        <div className="outcome-head">
+          <span className="outcome-ic">
+            <TrendIcon rating={outcome.rating} size={14} />
+          </span>
+          <div className="outcome-text">
+            <div className="outcome-title">{o.long}</div>
+            <div className="insp-row-sub">Reviewed {fmtDay(outcome.at)}</div>
+          </div>
+          <button className="outcome-edit" onClick={() => onReview(true)}>
+            Edit
+          </button>
+        </div>
+        {outcome.note && <div className="outcome-note">{outcome.note}</div>}
+      </div>
+    );
+  }
+  if (reviewDue(problem, [chosen])) {
+    return (
+      <>
+        <div className="checkback-line t-risk">
+          <IconClock size={14} /> Ready for a look back
+        </div>
+        <button className="btn-secondary" onClick={() => onReview(false)}>
+          Look back now
+        </button>
+      </>
+    );
+  }
+  if (reviewAt !== undefined) {
+    return (
+      <div className="checkback-line">
+        <IconClock size={14} />
+        <span className="checkback-tx">
+          Check back <b>{fmtDay(reviewAt)}</b> · {relDay(reviewAt)}
+        </span>
+        <button className="icon-btn checkback-clear" onClick={() => onReviewAt(undefined)} aria-label="Clear check-back date" title="Clear">
+          <IconClose size={12} />
+        </button>
+      </div>
+    );
+  }
+  const minDay = isoDay(tomorrow());
+  return (
+    <div className="checkback">
+      <div>
+        <div className="insp-row-title">Check back</div>
+        <div className="insp-row-sub">Get asked how it turned out</div>
+      </div>
+      <div className="chips">
+        {quickPicks().map((q) => (
+          <button key={q.label} className="chip chip-pick" onClick={() => onReviewAt(q.at)}>
+            {q.label}
+          </button>
+        ))}
+        <span className="chip chip-pick chip-date">
+          Pick a date…
+          <input
+            type="date"
+            min={minDay}
+            aria-label="Pick a check-back date"
+            // Open the calendar on any click, not only on its small icon.
+            onClick={(e) => {
+              try {
+                e.currentTarget.showPicker();
+              } catch {
+                /* not supported: the input still takes typing */
+              }
+            }}
+            onChange={(e) => {
+              const [y, m, d] = e.target.value.split('-').map(Number);
+              if (!y || !m || !d) return;
+              const ts = new Date(y, m - 1, d).getTime();
+              if (e.target.value >= minDay) onReviewAt(ts);
+            }}
+          />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** "Move to…": a menu of the cards that can take this one. Rendered in a portal so the scrolling panel can't clip it. */
-function MoveTo({ targets, onMove }: { targets: Item[]; onMove: (targetId: string) => void }) {
+function MoveTo({ kind, targets, onMove }: { kind: Kind; targets: Item[]; onMove: (targetId: string) => void }) {
   const btn = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<CSSProperties | null>(null);
   useEffect(() => {
@@ -140,6 +260,8 @@ function MoveTo({ targets, onMove }: { targets: Item[]; onMove: (targetId: strin
                     <KindIcon kind={t.kind} size={13} />
                   </span>
                   <span className={`move-title ${t.title ? '' : 'ph'}`}>
+                    {/* An option moved under an option becomes its sub-option. */}
+                    {kind === 'option' && t.kind === 'option' && <span className="move-pre">{kindLabel(kind, t.kind)} of </span>}
                     {t.title || `Untitled ${KINDS[t.kind].label.toLowerCase()}`}
                   </span>
                 </button>
@@ -152,9 +274,85 @@ function MoveTo({ targets, onMove }: { targets: Item[]; onMove: (targetId: strin
   );
 }
 
+type DecisionRecordData = {
+  /** The decision node: a decision, or an option with sub-options. */
+  problem: Item;
+  chosen: Item | null;
+  onRationale: (v: string) => void;
+  verdict?: Verdict | null;
+  onReviewAt?: (ts: number | undefined) => void;
+  /** Opens the look-back sheet (prefilled when editing a saved outcome). */
+  onReview?: (edit: boolean) => void;
+};
+
+/** A decision node's record: the verdict until a path is chosen, then the choice, why, and the look back. */
+function DecisionRecord({
+  label,
+  record,
+  empty,
+  onCompare,
+  compareLabel,
+  compareKey,
+}: {
+  label: string;
+  record: DecisionRecordData;
+  empty: string;
+  onCompare?: () => void;
+  compareLabel: string;
+  compareKey?: string;
+}) {
+  const node = record.problem;
+  return (
+    <section className="insp-section">
+      <div className="insp-label">{label}</div>
+      {record.chosen ? (
+        <div className="record-chosen">
+          <span className="record-check">
+            <IconCheck size={13} />
+          </span>
+          <div>
+            <div className="record-title">
+              {record.chosen.title || `Untitled ${kindLabel(record.chosen.kind, node.kind).toLowerCase()}`}
+            </div>
+            {node.decidedAt && (
+              <div className="insp-row-sub">
+                Decided {new Date(node.decidedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          {record.verdict && <VerdictHeadline v={record.verdict} className="insp-verdict" outcome={node.outcome} />}
+          <div className="insp-row-sub">{empty}</div>
+        </>
+      )}
+      {record.chosen && (
+        <AutoText
+          className="insp-notes"
+          value={node.rationale ?? ''}
+          placeholder="Why this path? Your future self will thank you…"
+          onChange={record.onRationale}
+        />
+      )}
+      {record.chosen && record.onReviewAt && record.onReview && (
+        <CheckBack problem={node} chosen={record.chosen} onReviewAt={record.onReviewAt} onReview={record.onReview} />
+      )}
+      {onCompare && (
+        <button className="btn-secondary" onClick={onCompare}>
+          <IconColumns size={15} /> {compareLabel}
+          {compareKey && <span className="kbd-hint">{compareKey}</span>}
+        </button>
+      )}
+    </section>
+  );
+}
+
 export function Inspector({
   item,
+  parentKind,
   stats,
+  via,
   focusToken,
   onUpdate,
   onAdd,
@@ -167,12 +365,18 @@ export function Inspector({
   onFocus,
   focused,
   record,
+  subRecord,
   onCompare,
+  onCompareSubs,
   reorder,
   blockers,
 }: {
   item: Item;
+  /** The parent card's kind (an option under an option is a sub-option). */
+  parentKind?: Kind | null;
   stats: Stats | null;
+  /** Options: the sub-option counted in the net score. */
+  via?: { title: string; net: number } | null;
   /** Changes whenever the title should take focus. */
   focusToken: number;
   onUpdate: (patch: Partial<Item>) => void;
@@ -188,10 +392,14 @@ export function Inspector({
   /** Present when this card has a branch that can be focused. */
   onFocus?: () => void;
   focused?: boolean;
-  /** Decision record: the decision this card belongs to and its chosen option. */
-  record?: { problem: Item; chosen: Item | null; onRationale: (v: string) => void; verdict?: Verdict | null };
+  /** Decision record: the decision node this card belongs to (a decision: itself) and its chosen option. */
+  record?: DecisionRecordData;
+  /** Options with sub-options: their own record (the sub-option choice). */
+  subRecord?: DecisionRecordData;
   /** Present on decisions with 2+ options. */
   onCompare?: () => void;
+  /** Present on options with 2+ sub-options. */
+  onCompareSubs?: () => void;
   /** Touch screens: move among same-type siblings (replaces drag to reorder). */
   reorder?: { canUp: boolean; canDown: boolean; move: (dir: -1 | 1) => void };
   /** Options: titles of the unmet must-haves that rule this option out. */
@@ -199,6 +407,7 @@ export function Inspector({
 }) {
   const meta = KINDS[item.kind];
   const style = { '--k': `var(--${item.kind})` } as CSSProperties;
+  const num = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
   return (
     <aside className="inspector glass" style={style} key={item.id}>
@@ -206,7 +415,7 @@ export function Inspector({
         <span className="dn-chip">
           <KindIcon kind={item.kind} size={14} />
         </span>
-        <span className="dn-kind">{meta.label}</span>
+        <span className="dn-kind">{kindLabel(item.kind, parentKind)}</span>
         <span className="dn-spacer" />
         {onFocus && (
           <button
@@ -226,7 +435,7 @@ export function Inspector({
       <AutoText
         className="insp-title"
         value={item.title}
-        placeholder={meta.placeholder}
+        placeholder={placeholderOf(item.kind, parentKind)}
         onChange={(v) => onUpdate({ title: v })}
         focusToken={focusToken}
       />
@@ -342,6 +551,11 @@ export function Inspector({
               {stats.net > 0 ? `+${stats.net}` : stats.net}
             </b>
           </div>
+          {via && (
+            <div className="net-via">
+              own {num(stats.ownNet)} · {via.title || 'Untitled sub-option'} {num(via.net)}
+            </div>
+          )}
           <button className={`btn-primary ${item.chosen ? 'is-on' : ''}`} onClick={onChoose}>
             {item.chosen ? (
               <>
@@ -354,44 +568,25 @@ export function Inspector({
         </section>
       )}
 
+      {item.kind === 'option' && subRecord && (
+        <DecisionRecord
+          label="Sub-options"
+          record={subRecord}
+          empty="No sub-option chosen yet."
+          onCompare={onCompareSubs}
+          compareLabel="Compare sub-options"
+        />
+      )}
+
       {item.kind === 'problem' && record && (
-        <section className="insp-section">
-          <div className="insp-label">Decision</div>
-          {record.chosen ? (
-            <div className="record-chosen">
-              <span className="record-check">
-                <IconCheck size={13} />
-              </span>
-              <div>
-                <div className="record-title">{record.chosen.title || 'Untitled option'}</div>
-                {item.decidedAt && (
-                  <div className="insp-row-sub">
-                    Decided {new Date(item.decidedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
-              {record.verdict && <VerdictHeadline v={record.verdict} className="insp-verdict" />}
-              <div className="insp-row-sub">No path chosen yet. Pick one from an option, or compare them side by side.</div>
-            </>
-          )}
-          {record.chosen && (
-            <AutoText
-              className="insp-notes"
-              value={item.rationale ?? ''}
-              placeholder="Why this path? Your future self will thank you…"
-              onChange={record.onRationale}
-            />
-          )}
-          {onCompare && (
-            <button className="btn-secondary" onClick={onCompare}>
-              <IconColumns size={15} /> Compare options
-              <span className="kbd-hint">C</span>
-            </button>
-          )}
-        </section>
+        <DecisionRecord
+          label="Decision"
+          record={record}
+          empty="No path chosen yet. Pick one from an option, or compare them side by side."
+          onCompare={onCompare}
+          compareLabel="Compare options"
+          compareKey="C"
+        />
       )}
 
       {item.kind === 'option' && item.chosen && record && (
@@ -418,14 +613,14 @@ export function Inspector({
                 onClick={() => onAdd(k)}
               >
                 <KindIcon kind={k} size={13} />
-                {KINDS[k].addLabel}
+                {addLabel(k, item.kind)}
               </button>
             ))}
           </div>
         </section>
       )}
 
-      {onMove && moveTargets && moveTargets.length > 0 && <MoveTo targets={moveTargets} onMove={onMove} />}
+      {onMove && moveTargets && moveTargets.length > 0 && <MoveTo kind={item.kind} targets={moveTargets} onMove={onMove} />}
 
       {reorder && (reorder.canUp || reorder.canDown) && (
         <section className="insp-section row">

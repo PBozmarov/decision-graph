@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { KINDS, type Item, type Kind } from './model';
+import { kindLabel, type Item, type Kind } from './model';
 import type { Doc } from './store';
 import { ago, summary } from './summary';
 import { IconCheck, IconSearch, KindIcon } from './icons';
@@ -88,7 +88,7 @@ function snippet(notes: string, words: string[]) {
 /* ---------- index ---------- */
 
 type DocEntry = { doc: Doc; title: string; root: Item | null; t: string };
-type CardEntry = { doc: Doc; docTitle: string; item: Item; t: string; n: string };
+type CardEntry = { doc: Doc; docTitle: string; item: Item; parentKind: Kind | null; t: string; n: string };
 
 function buildIndex(docs: Doc[]) {
   const decisions: DocEntry[] = [];
@@ -97,8 +97,16 @@ function buildIndex(docs: Doc[]) {
     const root = doc.items.find((i) => i.parentId === null && i.kind === 'problem') ?? null;
     const title = summary(doc).title;
     decisions.push({ doc, title, root, t: fold(root?.title ?? '').text });
+    const kindOf = new Map(doc.items.map((i) => [i.id, i.kind]));
     for (const item of doc.items)
-      cards.push({ doc, docTitle: title, item, t: fold(item.title).text, n: fold(item.notes).text });
+      cards.push({
+        doc,
+        docTitle: title,
+        item,
+        parentKind: kindOf.get(item.parentId ?? '') ?? null,
+        t: fold(item.title).text,
+        n: fold(item.notes).text,
+      });
   }
   return { decisions, cards };
 }
@@ -291,7 +299,7 @@ function CardRow({ r, words }: { r: Extract<Row, { type: 'card' }>; words: strin
       </span>
       <div className="pal-text">
         <div className="pal-title">
-          {it.title ? <Hl text={it.title} words={words} /> : <span className="ph">Untitled {KINDS[it.kind].label.toLowerCase()}</span>}
+          {it.title ? <Hl text={it.title} words={words} /> : <span className="ph">Untitled {kindLabel(it.kind, r.entry.parentKind).toLowerCase()}</span>}
         </div>
         <div className="side-meta">
           <span>

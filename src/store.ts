@@ -404,7 +404,8 @@ export function useDoc(uid: string | null) {
             : p.parentId === target.parentId && p.kind === 'option'
               ? { ...p, chosen: false }
               : p.id === target.parentId
-                ? { ...p, decidedAt: next ? Date.now() : undefined }
+                ? // An outcome (and its check-back date) belongs to one specific choice.
+                  { ...p, decidedAt: next ? Date.now() : undefined, reviewAt: undefined, outcome: undefined }
                 : p,
         );
       });
@@ -426,7 +427,7 @@ export function useDoc(uid: string | null) {
             p.id === parentId && p.collapsed
               ? { ...p, collapsed: false }
               : unchoose && p.id === it.parentId
-                ? { ...p, decidedAt: undefined }
+                ? { ...p, decidedAt: undefined, reviewAt: undefined, outcome: undefined }
                 : p,
           );
         return [...rest, { ...it, parentId, ...(unchoose ? { chosen: false } : {}) }];

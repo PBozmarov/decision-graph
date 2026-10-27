@@ -1,20 +1,38 @@
 import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { GUT_KEY, KINDS, isBlocked, isWeighted, type Item, type Stats, type Verdict } from './model';
+import {
+  GUT_KEY,
+  KINDS,
+  OUTCOME,
+  addLabel,
+  isBlocked,
+  isWeighted,
+  kindLabel,
+  placeholderOf,
+  type Item,
+  type Kind,
+  type Outcome,
+  type Stats,
+  type Verdict,
+} from './model';
 import { pillText, showsVerdict } from './compact';
 import { useActions } from './actions';
-import { GutIcon, IconCheck, IconChevron, IconPlus, KindIcon } from './icons';
+import { GutIcon, IconCheck, IconChevron, IconPlus, KindIcon, TrendIcon } from './icons';
 import { VerdictHeadline } from './Verdict';
 
 export type DNodeData = {
   item: Item;
   stats: Stats | null;
+  /** The parent card's kind (an option under an option is a sub-option). */
+  parentKind: Kind | null;
   childCount: number;
   optionCount: number;
-  /** Decision cards: title of the chosen option, if any. */
+  /** Decision nodes (decisions, options with sub-options): title of the chosen option, if any. */
   chosenTitle: string | null;
-  /** Decision cards: which option is ahead. */
+  /** Decision nodes: which option is ahead. */
   verdict: Verdict | null;
+  /** Decision nodes: the check-back date has come and there's no outcome yet. */
+  reviewDue: boolean;
   leading: boolean;
   dimmed: boolean;
   faded: boolean;
@@ -103,6 +121,8 @@ function Balance({ s }: { s: Stats }) {
         <span className="dn-spacer" />
         {s.mustMissing > 0 ? (
           <span className="t-con dn-must">{s.mustMissing} must-have missing</span>
+        ) : s.subBlocked ? (
+          <span className="t-con dn-must">All sub-options blocked</span>
         ) : (
           s.reqTotal > 0 && (
             <span className={missing ? 't-warn' : 't-ok'}>
@@ -115,12 +135,12 @@ function Balance({ s }: { s: Stats }) {
   );
 }
 
-function VerdictBlock({ v }: { v: Verdict }) {
+function VerdictBlock({ v, outcome }: { v: Verdict; outcome?: Outcome }) {
   const rows = v.rows.length <= 4 ? v.rows : v.rows.slice(0, 3);
   const num = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
   return (
     <div className="verdict">
-      <VerdictHeadline v={v} className="vd-head" />
+      <VerdictHeadline v={v} className="vd-head" outcome={outcome} />
       {v.showBars && (
         <div className="vd-rows">
           {rows.map((r) => (
@@ -154,7 +174,45 @@ function VerdictBlock({ v }: { v: Verdict }) {
   );
 }
 
-function InlineTitle({ item, selectAll }: { item: Item; selectAll: boolean }) {
+/** Options with sub-options: how many, and which one leads or was chosen. One line, cut short with an ellipsis. */
+function SubFoot({ s, v, chosenTitle, outcome }: { s: Stats; v: Verdict | null; chosenTitle: string | null; outcome?: Outcome }) {
+  if (chosenTitle !== null)
+    return (
+      <div className="dn-foot dn-subs vd-text vd-decided">
+        <IconCheck size={11} /> Chose <b>{chosenTitle || 'Untitled sub-option'}</b>
+        {outcome && (
+          <>
+            {' · '}
+            <span className="vd-outcome" style={{ color: OUTCOME[outcome.rating].color }}>
+              <TrendIcon rating={outcome.rating} size={11} /> {OUTCOME[outcome.rating].short}
+            </span>
+          </>
+        )}
+      </div>
+    );
+  const state = v?.state;
+  const leader = v?.rows.find((r) => r.id === v.leaderId)?.title || 'Untitled sub-option';
+  return (
+    <div className="dn-foot dn-subs vd-text">
+      {s.subCount} sub-option{s.subCount === 1 ? '' : 's'}
+      {(state === 'clear' || state === 'close' || state === 'onlyViable') && (
+        <>
+          {' · '}
+          <b className="vd-lead">{leader}</b> leads
+        </>
+      )}
+      {state === 'tie' && ' · tied'}
+      {state === 'allBlocked' && (
+        <>
+          {' · '}
+          <span className="t-con">all blocked</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function InlineTitle({ item, selectAll, placeholder }: { item: Item; selectAll: boolean; placeholder: string }) {
   const { update, editKey, stopEdit } = useActions();
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -178,7 +236,7 @@ function InlineTitle({ item, selectAll }: { item: Item; selectAll: boolean }) {
       rows={1}
       className={cx('dn-title dn-edit nodrag nowheel nopan')}
       value={item.title}
-      placeholder={KINDS[item.kind].placeholder}
+      placeholder={placeholder}
       onChange={(e) => update(item.id, { title: e.target.value.replace(/\n/g, ' ') })}
       onKeyDown={(e) => {
         if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape' || e.key === 'Tab') {
@@ -247,6 +305,7 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
   const { item, stats, childCount, optionCount, leading, dimmed, faded, w, h, pills, selectedPill } = data;
   const { add, update, toggleMenu } = useActions();
   const meta = KINDS[item.kind];
+  const placeholder = placeholderOf(item.kind, data.parentKind);
   const canAdd = meta.children.length > 0;
   const menu = data.menuOpen;
   const blocked = item.kind === 'option' && isBlocked(stats);
@@ -278,7 +337,11 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
         <span className="dn-chip">
           <KindIcon kind={item.kind} size={14} />
         </span>
-        <span className="dn-kind">{meta.label}</span>
+        {/* Two badges leave no room for the label (it would ellipsize to nothing); the chip still names the kind. */}
+        {!(data.reviewDue && (item.chosen || blocked || leading)) && (
+          <span className="dn-kind">{kindLabel(item.kind, data.parentKind)}</span>
+        )}
+        {data.reviewDue && <span className="badge badge-review">Review due</span>}
         {item.kind === 'requirement' && item.must && <span className="badge badge-must">Must-have</span>}
         {item.chosen && (
           <span className="badge badge-chosen">
@@ -337,10 +400,10 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
       </div>
 
       {data.editing ? (
-        <InlineTitle item={item} selectAll={data.selectAll} />
+        <InlineTitle item={item} selectAll={data.selectAll} placeholder={placeholder} />
       ) : (
         <div className={cx('dn-title', item.kind === 'action' && item.done && 'is-done')}>
-          {item.title || <span className="ph">{meta.placeholder}</span>}
+          {item.title || <span className="ph">{placeholder}</span>}
         </div>
       )}
 
@@ -352,12 +415,23 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
           ))}
         </div>
       )}
-      {item.kind === 'problem' && showsVerdict(data.verdict) && <VerdictBlock v={data.verdict} />}
+      {item.kind === 'option' && stats && stats.subCount > 0 && (
+        <SubFoot s={stats} v={data.verdict} chosenTitle={data.chosenTitle} outcome={item.outcome} />
+      )}
+      {item.kind === 'problem' && showsVerdict(data.verdict) && <VerdictBlock v={data.verdict} outcome={item.outcome} />}
       {item.kind === 'problem' && !showsVerdict(data.verdict) && (
         <div className="dn-foot">
           {data.chosenTitle !== null ? (
             <span className="dn-decided">
               <IconCheck size={11} /> {data.chosenTitle || 'Untitled option'}
+              {item.outcome && (
+                <>
+                  ·
+                  <span className="vd-outcome" style={{ color: OUTCOME[item.outcome.rating].color }}>
+                    <TrendIcon rating={item.outcome.rating} size={11} /> {OUTCOME[item.outcome.rating].short}
+                  </span>
+                </>
+              )}
             </span>
           ) : optionCount === 0 ? (
             'No options yet'
@@ -394,7 +468,7 @@ function DecisionNodeImpl({ data, selected }: NodeProps<DNode>) {
               <span className="dn-chip">
                 <KindIcon kind={k} size={13} />
               </span>
-              {KINDS[k].addLabel}
+              {addLabel(k, item.kind)}
               <kbd className="menu-kbd">{i + 1}</kbd>
             </button>
           ))}

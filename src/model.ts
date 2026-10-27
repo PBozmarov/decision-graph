@@ -14,8 +14,33 @@ export type Item = {
   gut?: -1 | 0 | 1; // options: how the path feels (uneasy, neutral, good); undefined = not asked yet
   rationale?: string; // used by problem: why the chosen path won
   decidedAt?: number; // used by problem: when a path was chosen
+  reviewAt?: number; // used by problem: when to look back (start of a local day)
+  outcome?: Outcome; // used by problem: how the chosen path turned out
   collapsed: boolean;
 };
+
+export type OutcomeRating = -1 | 0 | 1;
+export type Outcome = { rating: OutcomeRating; note?: string; at: number };
+
+export const OUTCOME: Record<OutcomeRating, { short: string; long: string; color: string }> = {
+  1: { short: 'Better', long: 'Better than expected', color: 'var(--pro)' },
+  0: { short: 'As expected', long: 'As expected', color: 'var(--text-2)' },
+  [-1]: { short: 'Worse', long: 'Worse than expected', color: 'var(--con)' },
+};
+
+/**
+ * A decided decision whose check-back date has come and that has no outcome yet.
+ * Works for any decision node: a problem, or an option with sub-options (`options` are its children).
+ */
+export function reviewDue(node: Item, options: Item[], now = Date.now()): boolean {
+  return (
+    (node.kind === 'problem' || node.kind === 'option') &&
+    node.reviewAt !== undefined &&
+    node.reviewAt <= now &&
+    !node.outcome &&
+    options.some((o) => o.kind === 'option' && o.chosen && o.parentId === node.id)
+  );
+}
 
 export const KINDS: Record<
   Kind,
@@ -30,7 +55,7 @@ export const KINDS: Record<
   option: {
     label: 'Option',
     addLabel: 'Option',
-    children: ['requirement', 'pro', 'con', 'risk', 'action', 'note', 'problem'],
+    children: ['requirement', 'pro', 'con', 'risk', 'action', 'note', 'option', 'problem'],
     placeholder: 'A path you could take',
   },
   requirement: {
@@ -45,6 +70,16 @@ export const KINDS: Record<
   action: { label: 'Action', addLabel: 'Action', children: ['note'], placeholder: 'Something to do or check' },
   note: { label: 'Note', addLabel: 'Note', children: [], placeholder: 'Write a note…' },
 };
+
+/** An option inside an option is a "sub-option": a variant of that path. */
+const isSub = (kind: Kind, parentKind: Kind | null | undefined) => kind === 'option' && parentKind === 'option';
+/** The kind's name where it sits (card header, inspector, palette, Markdown, MCP outline). */
+export const kindLabel = (kind: Kind, parentKind?: Kind | null) => (isSub(kind, parentKind) ? 'Sub-option' : KINDS[kind].label);
+/** What adding this kind under a `parentKind` card is called (the + menu, "Branch out"). */
+export const addLabel = (kind: Kind, parentKind?: Kind | null) => (isSub(kind, parentKind) ? 'Sub-option' : KINDS[kind].addLabel);
+/** The empty title's placeholder. */
+export const placeholderOf = (kind: Kind, parentKind?: Kind | null) =>
+  isSub(kind, parentKind) ? 'A variant of this option' : KINDS[kind].placeholder;
 
 export const isWeighted = (k: Kind) => k === 'pro' || k === 'con' || k === 'risk';
 
@@ -78,6 +113,7 @@ export function makeItem(parentId: string | null, kind: Kind, title = ''): Item 
 
 /* ---------- stats ---------- */
 
+/** Counts (pro, con, risk, requirements, actions, must-haves) are the option's OWN children; net, via and scored include its sub-options. */
 export type Stats = {
   pro: number;
   con: number;
@@ -88,7 +124,18 @@ export type Stats = {
   actTotal: number;
   mustTotal: number;
   mustMissing: number;
+  /** pro − con − risk of its own children. */
+  ownNet: number;
+  /** ownNet plus the net of the counted sub-option (`via`). */
   net: number;
+  /** The counted sub-option: the chosen one, else the best viable one, else null. */
+  via: string | null;
+  /** Direct sub-options. */
+  subCount: number;
+  /** Has sub-options and every one of them is blocked. */
+  subBlocked: boolean;
+  /** Something is weighed: its own pros/cons/risks, or those of the counted sub-option. */
+  scored: boolean;
 };
 
 export function optionStats(children: Item[]): Stats {
@@ -102,7 +149,12 @@ export function optionStats(children: Item[]): Stats {
     actTotal: 0,
     mustTotal: 0,
     mustMissing: 0,
+    ownNet: 0,
     net: 0,
+    via: null,
+    subCount: 0,
+    subBlocked: false,
+    scored: false,
   };
   for (const c of children) {
     if (c.kind === 'pro') s.pro += c.weight;
@@ -118,14 +170,51 @@ export function optionStats(children: Item[]): Stats {
     } else if (c.kind === 'action') {
       s.actTotal++;
       if (c.done) s.actDone++;
-    }
+    } else if (c.kind === 'option') s.subCount++;
   }
-  s.net = s.pro - s.con - s.risk;
+  s.ownNet = s.net = s.pro - s.con - s.risk;
+  s.scored = s.pro + s.con + s.risk > 0;
   return s;
 }
 
-/** An option missing a must-have is ruled out. */
-export const isBlocked = (s: Stats | null | undefined) => !!s && s.mustMissing > 0;
+/** An option missing a must-have, or whose sub-options are all blocked, is ruled out. */
+export const isBlocked = (s: Stats | null | undefined) => !!s && (s.mustMissing > 0 || s.subBlocked);
+
+/**
+ * Stats for every option, bottom-up: an option also counts its chosen sub-option or, when none is
+ * chosen, its best viable one (recursively). A chosen sub-option counts even when it's blocked.
+ */
+export function effectiveStats(items: Item[], kids = groupChildren(items)): Map<string, Stats> {
+  const out = new Map<string, Stats>();
+  const visit = (o: Item): Stats => {
+    const done = out.get(o.id);
+    if (done) return done;
+    const children = kids.get(o.id) ?? [];
+    const s = optionStats(children);
+    out.set(o.id, s); // set before recursing: a (corrupt) cycle can't loop forever
+    const subs = children.filter((c) => c.kind === 'option');
+    const subStats = subs.map(visit);
+    const chosen = subs.findIndex((c) => c.chosen);
+    let best = chosen;
+    if (best < 0)
+      subStats.forEach((t, i) => {
+        if (!isBlocked(t) && (best < 0 || t.net > subStats[best].net)) best = i; // ties: the first in graph order
+      });
+    if (best >= 0) {
+      s.via = subs[best].id;
+      s.net = s.ownNet + subStats[best].net;
+      s.scored ||= subStats[best].scored;
+    }
+    s.subBlocked = subs.length > 0 && subStats.every(isBlocked);
+    return s;
+  };
+  for (const it of items) if (it.kind === 'option') visit(it);
+  return out;
+}
+
+/** A decision node holds a choice: a problem, or an option with at least one sub-option. */
+export const isDecisionNode = (it: Item, children: Item[]) =>
+  it.kind === 'problem' || (it.kind === 'option' && children.some((c) => c.kind === 'option'));
 
 /* ---------- verdict ---------- */
 
@@ -151,11 +240,8 @@ export const GUT_KEY = { [-1]: 'uneasy', 0: 'neutral', 1: 'good' } as const;
 /** Which option of a decision is ahead, and how clearly. Shared by the card, inspector, compare and export. */
 export function verdictOf(options: Item[], statsOf: (id: string) => Stats): Verdict {
   const net = (o: Item) => statsOf(o.id).net;
-  const viable = options.filter((o) => statsOf(o.id).mustMissing === 0);
-  const scored = viable.filter((o) => {
-    const s = statsOf(o.id);
-    return s.pro + s.con + s.risk > 0;
-  });
+  const viable = options.filter((o) => !isBlocked(statsOf(o.id)));
+  const scored = viable.filter((o) => statsOf(o.id).scored);
   const byNet = (list: Item[]) => [...list].sort((a, b) => net(b) - net(a)); // Array.sort is stable
 
   let state: VerdictState;
@@ -219,8 +305,10 @@ const ORDER: Record<Kind, number> = {
   risk: 3,
   action: 4,
   note: 5,
-  problem: 6,
+  problem: 7,
 };
+/** Under an option, its sub-options sit below its details (after notes) and above its sub-decisions. */
+const SUB_OPTION_ORDER = 6;
 const H_GAP = 112;
 const V_GAP = 16;
 const KIND_GAP = 28;
@@ -229,12 +317,18 @@ const ROOT_GAP = 120;
 
 export function groupChildren(items: Item[]) {
   const map = new Map<string | null, Item[]>();
+  const kindOf = new Map<string, Kind>();
   for (const it of items) {
+    kindOf.set(it.id, it.kind);
     const list = map.get(it.parentId);
     if (list) list.push(it);
     else map.set(it.parentId, [it]);
   }
-  for (const list of map.values()) list.sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
+  for (const [parentId, list] of map) {
+    const underOption = parentId !== null && kindOf.get(parentId) === 'option';
+    const rank = (k: Kind) => (underOption && k === 'option' ? SUB_OPTION_ORDER : ORDER[k]);
+    list.sort((a, b) => rank(a.kind) - rank(b.kind));
+  }
   return map;
 }
 

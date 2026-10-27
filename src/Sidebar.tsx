@@ -1,7 +1,8 @@
 import type { Doc, SyncStatus } from './store';
 import type { Account } from './cloud';
 import { useRef } from 'react';
-import { IconCheck, IconDownload, IconPlus, IconSearch, IconSparkle, IconTrash, IconUpload } from './icons';
+import { OUTCOME } from './model';
+import { IconCheck, IconDownload, IconPlus, IconSearch, IconSparkle, IconTrash, IconUpload, TrendIcon } from './icons';
 import { ago, summary } from './summary';
 
 const SYNC_LABEL: Record<SyncStatus, string> = {
@@ -36,6 +37,7 @@ export function Sidebar({
   syncStatus,
   onSignIn,
   onSignOut,
+  dueDocs,
 }: {
   docs: Doc[];
   activeId: string;
@@ -52,6 +54,8 @@ export function Sidebar({
   syncStatus: SyncStatus;
   onSignIn: () => void;
   onSignOut: () => void;
+  /** Decisions with a look back that's due. */
+  dueDocs?: Set<string>;
 }) {
   const sorted = [...docs].sort((a, b) => b.updatedAt - a.updatedAt);
   // Once something is decided, split the list; each part keeps the last-edited-first order.
@@ -75,13 +79,18 @@ export function Sidebar({
         <div className="side-meta">
           {s.chosen ? (
             <span className="side-chosen">
-              <IconCheck size={11} /> {s.chosen}
+              <IconCheck size={11} /> <span className="side-chosen-tx">{s.chosen}</span>
+              {s.outcome && (
+                <span className="side-outcome" style={{ color: OUTCOME[s.outcome.rating].color }} title={OUTCOME[s.outcome.rating].long}>
+                  <TrendIcon rating={s.outcome.rating} size={11} />
+                </span>
+              )}
             </span>
           ) : (
             <span>{s.options ? `${s.options} option${s.options === 1 ? '' : 's'}` : 'No options yet'}</span>
           )}
           <span className="side-dot" />
-          <span>{ago(d.updatedAt)}</span>
+          {dueDocs?.has(d.id) ? <span className="side-due">Review due</span> : <span>{ago(d.updatedAt)}</span>}
         </div>
         <button
           className="side-del"

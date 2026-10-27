@@ -1,17 +1,23 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { Item } from './model';
 import { IconCheck } from './icons';
+import { quickPicks } from './dates';
 
 /** Right after a path is chosen: ask for the reasoning while it's fresh. Typing saves live. */
 export function WhyPrompt({
   option,
   rationale,
   onRationale,
+  reviewAt,
+  onReviewAt,
   onClose,
 }: {
   option: Item;
   rationale: string;
   onRationale: (v: string) => void;
+  /** The decision's check-back date; a chip sets it, clicking the selected one clears it. */
+  reviewAt?: number;
+  onReviewAt: (ts: number | undefined) => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -61,6 +67,21 @@ export function WhyPrompt({
           }
         }}
       />
+      <div className="why-review">
+        <span className="why-review-label">Check back in</span>
+        {quickPicks().map((q) => (
+          <button
+            key={q.label}
+            className={`chip chip-pick ${reviewAt === q.at ? 'is-on' : ''}`}
+            aria-pressed={reviewAt === q.at}
+            // Keep the caret in the reasoning (and ⌘↵ working) while picking.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onReviewAt(reviewAt === q.at ? undefined : q.at)}
+          >
+            {q.label}
+          </button>
+        ))}
+      </div>
       <div className="why-foot">
         <button className="why-skip" onClick={onClose}>
           Skip

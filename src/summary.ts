@@ -21,5 +21,6 @@ export function summary(doc: Doc) {
     title: root?.title || (doc.items.length ? 'Untitled decision' : 'New decision'),
     chosen: chosen ? chosen.title || 'Untitled option' : null,
     options: options.length,
+    outcome: chosen ? root?.outcome : undefined,
   };
 }

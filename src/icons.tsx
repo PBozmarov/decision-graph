@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Kind } from './model';
+import type { Kind, OutcomeRating } from './model';
 
 function Svg({ children, size = 16 }: { children: ReactNode; size?: number }) {
   return (
@@ -260,3 +260,18 @@ export const IconFaceGood = ({ size }: { size?: number }) => (
 /** The face for a gut feeling (colored by the caller's `.gut-*` class). */
 export const GutIcon = ({ gut, size }: { gut: -1 | 0 | 1; size?: number }) =>
   gut === 1 ? <IconFaceGood size={size} /> : gut === -1 ? <IconFaceUneasy size={size} /> : <IconFaceNeutral size={size} />;
+export const IconFlat = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M3 12h18" />
+    <path d="m15 6 6 6-6 6" />
+  </Svg>
+);
+export const IconClock = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Svg>
+);
+/** How a choice turned out: the pro trend, a flat arrow, or the con trend (colored by the caller). */
+export const TrendIcon = ({ rating, size }: { rating: OutcomeRating; size?: number }) =>
+  rating === 1 ? <KindIcon kind="pro" size={size} /> : rating === -1 ? <KindIcon kind="con" size={size} /> : <IconFlat size={size} />;

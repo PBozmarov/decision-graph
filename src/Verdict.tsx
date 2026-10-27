@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import type { Verdict } from './model';
-import { IconCheck, IconFaceGood, IconFaceUneasy } from './icons';
+import { OUTCOME, type Outcome, type Verdict } from './model';
+import { IconCheck, IconFaceGood, IconFaceUneasy, TrendIcon } from './icons';
 
 /** One-line summary of which option is ahead; shared by the decision card, compare sheet and inspector. */
-export function VerdictHeadline({ v, className = '' }: { v: Verdict; className?: string }) {
+export function VerdictHeadline({ v, className = '', outcome }: { v: Verdict; className?: string; outcome?: Outcome }) {
   const name = (id: string | null) => v.rows.find((r) => r.id === id)?.title || 'Untitled option';
   const pts = v.margin === 1 ? 'point' : 'points';
   let body: ReactNode;
@@ -14,6 +14,14 @@ export function VerdictHeadline({ v, className = '' }: { v: Verdict; className?:
       body = (
         <>
           <IconCheck size={11} /> Chose <b>{name(v.chosenId)}</b>
+          {outcome && (
+            <>
+              {' · '}
+              <span className="vd-outcome" style={{ color: OUTCOME[outcome.rating].color }}>
+                <TrendIcon rating={outcome.rating} size={11} /> {OUTCOME[outcome.rating].short}
+              </span>
+            </>
+          )}
         </>
       );
       break;
@@ -80,7 +88,9 @@ export function VerdictHeadline({ v, className = '' }: { v: Verdict; className?:
       ? `Gut favors ${name(gut.favoriteId)} · numbers favor ${name(v.leaderId)}`
       : gut?.kind === 'feelsOff'
         ? `${name(v.leaderId)} leads, but it feels off`
-        : undefined;
+        : v.state === 'decided' && outcome
+          ? `Chose ${name(v.chosenId)} · ${OUTCOME[outcome.rating].long}`
+          : undefined;
   return (
     <div className={`vd-text vd-${v.state} ${v.state === 'allBlocked' ? 't-con' : ''} ${className}`} title={full}>
       {body}

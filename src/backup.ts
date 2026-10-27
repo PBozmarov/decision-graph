@@ -36,6 +36,12 @@ function readItem(v: unknown): Item | null {
   if (str('rationale') !== undefined) it.rationale = str('rationale');
   if (typeof v.decidedAt === 'number') it.decidedAt = v.decidedAt;
   if (v.gut === -1 || v.gut === 0 || v.gut === 1) it.gut = v.gut;
+  if (typeof v.reviewAt === 'number' && Number.isFinite(v.reviewAt)) it.reviewAt = v.reviewAt;
+  const o = v.outcome;
+  if (isObj(o) && (o.rating === -1 || o.rating === 0 || o.rating === 1) && typeof o.at === 'number' && Number.isFinite(o.at)) {
+    it.outcome = { rating: o.rating, at: o.at };
+    if (typeof o.note === 'string') it.outcome.note = o.note;
+  }
   return it;
 }
 

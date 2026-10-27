@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { GUT_KEY, groupChildren, isBlocked, optionStats, verdictOf, type Item, type Kind, type Stats } from './model';
+import { GUT_KEY, effectiveStats, groupChildren, isBlocked, verdictOf, type Item, type Kind } from './model';
 import { GutIcon, IconCheck, IconClose, KindIcon } from './icons';
 import { VerdictHeadline } from './Verdict';
 
@@ -12,6 +12,8 @@ const ROWS: { kind: Kind; title: string }[] = [
 ];
 
 const GUT_LABEL = { [-1]: 'Feels uneasy', 0: 'Neutral', 1: 'Feels good' } as const;
+
+const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
 const k = (kind: string) => ({ '--k': `var(--${kind})` }) as CSSProperties;
 
@@ -42,6 +44,7 @@ export function Compare({
   onChoose,
   onClose,
 }: {
+  /** Any decision node: a decision, or an option with sub-options. */
   problem: Item;
   items: Item[];
   onChoose: (optionId: string) => void;
@@ -52,11 +55,9 @@ export function Compare({
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const shown = options.filter((o) => !hidden.has(o.id));
 
-  const stats = useMemo(() => {
-    const m = new Map<string, Stats>();
-    for (const o of options) m.set(o.id, optionStats(kids.get(o.id) ?? []));
-    return m;
-  }, [options, kids]);
+  // Effective scores: an option also counts its chosen (or best viable) sub-option.
+  const stats = useMemo(() => effectiveStats(items, kids), [items, kids]);
+  const sub = problem.kind === 'option';
 
   // Same verdict as the decision card, but over the options currently shown.
   const verdict = verdictOf(shown, (id) => stats.get(id)!);
@@ -75,11 +76,11 @@ export function Compare({
 
   return (
     <div className="cmp-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="cmp glass" role="dialog" aria-label="Compare options">
+      <section className="cmp glass" role="dialog" aria-label={sub ? 'Compare sub-options' : 'Compare options'}>
         <header className="cmp-head">
           <div>
-            <div className="cmp-eyebrow">Compare options</div>
-            <h2>{problem.title || 'Untitled decision'}</h2>
+            <div className="cmp-eyebrow">{sub ? 'Compare sub-options' : 'Compare options'}</div>
+            <h2>{problem.title || (sub ? 'Untitled option' : 'Untitled decision')}</h2>
             <VerdictHeadline v={verdict} className="cmp-verdict" />
           </div>
           <button className="icon-btn cmp-close" onClick={onClose} aria-label="Close">
@@ -105,7 +106,7 @@ export function Compare({
                 }
               >
                 <span className="cmp-box">{on && <IconCheck size={10} />}</span>
-                {o.title || 'Untitled option'}
+                {o.title || (sub ? 'Untitled sub-option' : 'Untitled option')}
               </button>
             );
           })}
@@ -126,7 +127,7 @@ export function Compare({
                     <span className="dn-chip" style={k('option')}>
                       <KindIcon kind="option" size={13} />
                     </span>
-                    <span className="cmp-opt-title">{o.title || 'Untitled option'}</span>
+                    <span className="cmp-opt-title">{o.title || (sub ? 'Untitled sub-option' : 'Untitled option')}</span>
                   </div>
                   <div className="cmp-net">
                     <b className={s.net > 0 ? 't-pro' : s.net < 0 ? 't-con' : ''}>{s.net > 0 ? `+${s.net}` : s.net}</b>
@@ -145,6 +146,11 @@ export function Compare({
                       </span>
                     )}
                   </div>
+                  {s.via && (
+                    <div className="cmp-via">
+                      incl. {items.find((i) => i.id === s.via)?.title || 'Untitled sub-option'} {signed(stats.get(s.via)!.net)}
+                    </div>
+                  )}
                   <div className="balance">
                     <span className="seg seg-pro" style={{ width: pct(s.pro) }} />
                     <span className="seg seg-con" style={{ width: pct(s.con) }} />
@@ -217,7 +223,7 @@ export function Compare({
         </div>
 
         {options.length < 2 && (
-          <p className="cmp-empty">Add at least two options to compare them.</p>
+          <p className="cmp-empty">Add at least two {sub ? 'sub-options' : 'options'} to compare them.</p>
         )}
       </section>
     </div>
